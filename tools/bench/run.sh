@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Runs bench/prompts/*.md in order, each in a fresh headless Claude Code session
+# Runs tools/bench/prompts/*.md in order, each in a fresh headless Claude Code session
 # (bypass mode), in a work directory that must not exist yet. The prompts never
 # mention editing tools: the point is to see what the agent picks on its own.
 #
-# usage: bench/run.sh [work-dir]     (default: ~/project/lab/tasklog)
+# usage: tools/bench/run.sh [work-dir]     (default: ~/project/lab/tasklog)
 #        MODEL=claude-sonnet-5-5 by default
 set -euo pipefail
 

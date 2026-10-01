@@ -169,7 +169,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 ## 進み具合
 
 - 2026-10-02: リポジトリを整理した。
-  - リポジトリの外（`~/project/prod/rpatch-notes/`）へ移した: 試用レビューとメモ（`review.md` は `docs/review-v0.3.0.md` として）、`docs/trial-notes-v0.2.0.md`、`docs/mcp-experiment.md`（→ `docs/`）、CLI と MCP の比較実験の一式（`bench/compare*.sh`、`compare_metrics.py` とそのテスト、`codex_overrides.py`、`compare-prompts/`、`fixtures/`、`verify-sample.mjs`、比較の生ログ → `bench-compare/`）。HANDOFF のパスも書き換えた。`bench/run.sh` と `bench/prompts/` は、採用の測り直しに使えるので残した。
+  - リポジトリの外（`~/project/prod/rpatch-notes/`）へ移した: 試用レビューとメモ（`review.md` は `docs/review-v0.3.0.md` として）、`docs/trial-notes-v0.2.0.md`、`docs/mcp-experiment.md`（→ `docs/`）、CLI と MCP の比較実験の一式（`bench/compare*.sh`、`compare_metrics.py` とそのテスト、`codex_overrides.py`、`compare-prompts/`、`fixtures/`、`verify-sample.mjs`、比較の生ログ → `bench-compare/`）。HANDOFF のパスも書き換えた。`bench/run.sh` と `bench/prompts/` は、採用の測り直しに使えるので残した（同じ日に `tools/bench/` へ移した）。
   - 技術文書を書いた: `docs/design.md`（日本語）と `docs/design.en.md`（英語、LLM 向け）。処理の流れ、モジュール、編集の種類ごとの照合の規則、診断、at_lines、終了コード、範囲外にしたもの、テスト。書いた挙動（終了コード、改行のない最終行）は実際に動かして確かめた。
   - `llms.txt`（英語）を足した。使い方の例・主な規則・文書へのリンク。例はそのまま動くことを確かめた。
   - README を直した（MCP の説明を短くし、文書へのリンクを足した）。HANDOFF の同じ行の重複も 1 つ消した。
@@ -202,7 +202,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
   - `metrics.py` を直した。`rpatch --help` のような編集しない呼び出しを `rpatch_discovery` として別に数える（それまでは rpatch の編集に入っていた）。MCP 経由の rpatch（`rpatch_mcp`）も数える。
 
 - 2026-10-01: v1 を見送った（上の「v1: 構文チェック」を参照）。数えるのに使った `tools/log-analysis/syntax_breaks.py` を足し、`metrics.py` は import しても `main()` を動かさないようにした。
-- 2026-10-01: 途中で止まったベンチを確かめた。11 のプロンプトを流す `run.sh`（`bench/out/20261001-160418/`）は 11 本とも正常に終わっていた。止まったのは Claude Code での CLI と MCP の比較（`compare-20261001-171214`、429 で作業前に終了）で、MCP をおまけにしたので取り直さない。
+- 2026-10-01: 途中で止まったベンチを確かめた。11 のプロンプトを流す `run.sh`（`tools/bench/out/20261001-160418/`）は 11 本とも正常に終わっていた。止まったのは Claude Code での CLI と MCP の比較（`compare-20261001-171214`、429 で作業前に終了）で、MCP をおまけにしたので取り直さない。
 
 - 2026-10-01: #14、#15 の診断の文言を直した。
   - #14: 1 行のテキストが行の途中にしかないときは、`OLD line 1 is in the middle of line N (text before and after it on that line is missing)` と 1 回だけ言う（それまでは「末尾だけ」と「先頭だけ」を両方出していた）。FROM も同じ。
