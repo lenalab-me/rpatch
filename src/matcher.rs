@@ -246,20 +246,42 @@ fn mismatch(
     block: bool,
 ) -> Mismatch {
     let positions = found.positions;
+    if found.overlap {
+        // Overlap fails whatever the count, so it leads; "expected 2, found 2" read as a contradiction.
+        let mut details = diagnose::count_mismatch(content, positions, expected, field, block);
+        details.remove(0);
+        details.pop();
+        let within_line = !needle.trim_end_matches(['\n', '\r']).contains('\n');
+        details.push(if within_line {
+            format!(
+                "hint: the matches overlap within a line, so they can be neither told apart nor all replaced; add the characters before or after it to \"{field}\" so that it matches once"
+            )
+        } else {
+            format!(
+                "hint: the matches overlap (such as repeated identical lines), so they can be neither told apart nor all replaced; add a nearby line to \"{field}\" that makes it unique"
+            )
+        });
+        let counted = format!(
+            "{} matches found, but they overlap ({})",
+            positions.len(),
+            overlap_places(content, positions, needle.len(), within_line)
+        );
+        return Mismatch {
+            headline: if field == "old" {
+                counted
+            } else {
+                format!("\"{field}\": {counted}")
+            },
+            details,
+        };
+    }
     if !positions.is_empty() {
         let n = positions.len();
         let counted = format!(
-            "expected {expected} match{}, found {n}{}",
+            "expected {expected} match{}, found {n}",
             if expected == 1 { "" } else { "es" },
-            if found.overlap { " (overlapping)" } else { "" }
         );
-        let mut details = diagnose::count_mismatch(content, positions, expected, field, block);
-        if found.overlap {
-            details.pop();
-            details.push(format!(
-                "hint: the matches overlap (such as repeated identical lines), so they can be neither told apart nor all replaced; add a nearby line to \"{field}\" that makes it unique"
-            ));
-        }
+        let details = diagnose::count_mismatch(content, positions, expected, field, block);
         return Mismatch {
             headline: if field == "old" {
                 counted
@@ -279,6 +301,50 @@ fn mismatch(
         None => diagnose::not_found(content, needle, field, 0),
     };
     Mismatch { headline, details }
+}
+
+/// Where overlapping matches are: "lines 1-2 and 2-3", or for text within a line
+/// "line 1, columns 1-2 and 2-3".
+fn overlap_places(content: &str, positions: &[usize], len: usize, within_line: bool) -> String {
+    const MAX_PLACES: usize = 10;
+    let idx = LineIndex::new(content);
+    let mut groups: Vec<(usize, Vec<String>)> = Vec::new();
+    for &p in positions.iter().take(MAX_PLACES) {
+        let end = (p + len).min(content.len());
+        let (line, place) = if within_line {
+            let line = idx.line_of(p);
+            let col = content[line_start(content, p)..p].chars().count() + 1;
+            let last = col + content[p..end].chars().count() - 1;
+            (line, format!("{col}-{last}"))
+        } else {
+            let first = idx.line_of(p);
+            let last = idx.line_of(end.saturating_sub(1).max(p));
+            (0, format!("{first}-{last}"))
+        };
+        match groups.last_mut() {
+            Some((l, places)) if *l == line => places.push(place),
+            _ => groups.push((line, vec![place])),
+        }
+    }
+    let more = if positions.len() > MAX_PLACES {
+        ", …"
+    } else {
+        ""
+    };
+    let and_list = |items: &[String]| match items {
+        [a, b] => format!("{a} and {b}"),
+        _ => items.join(", "),
+    };
+    let text = if within_line {
+        groups
+            .iter()
+            .map(|(line, places)| format!("line {line}, columns {}", and_list(places)))
+            .collect::<Vec<_>>()
+            .join("; ")
+    } else {
+        format!("lines {}", and_list(&groups[0].1))
+    };
+    format!("{text}{more}")
 }
 
 /// Block texts match at line starts. If the text is in `content[start..]` only as part of
@@ -306,17 +372,28 @@ fn partial_line(content: &str, needle: &str, start: usize, field: &str) -> Optio
 
     let idx = LineIndex::new(content);
     let name = field.to_uppercase();
+    // Text before and after it on the same line: in the middle, neither "the end" nor "the start".
+    let first_end = p + text.find('\n').unwrap_or(text.len());
+    let middle =
+        cut_start && first_end < content.len() && !content[first_end..].starts_with(['\n', '\r']);
     let mut out =
         vec!["found only as part of a line (the block format matches whole lines):".to_string()];
     if cut_start {
         let l = idx.line_of(p);
-        out.push(format!(
-            "{name} line 1 is only the end of line {l} (text at the start of the line, such as indentation, is missing):"
-        ));
+        out.push(if middle {
+            format!(
+                "{name} line 1 is in the middle of line {l} (text before and after it on that line is missing):"
+            )
+        } else {
+            format!(
+                "{name} line 1 is only the end of line {l} (text at the start of the line, such as indentation, is missing):"
+            )
+        });
         // The whole line, untruncated: the usual fix is to copy it into OLD.
         out.push(gutter_copyable(l, idx.line(content, l)));
     }
-    if cut_end {
+    // A one-line OLD in the middle of a line was named once above.
+    if cut_end && !(middle && !text.contains('\n')) {
         let l = idx.line_of(end);
         out.push(format!(
             "{name} line {} is only the start of line {l}:",

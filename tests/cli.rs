@@ -1146,9 +1146,79 @@ fn overlapping_matches_are_ambiguous_block() {
         "=== ov.txt\n<<<<<<< OLD\nx\nx\n=======\ny\n>>>>>>> NEW\n",
     )
     .code(1)
-    .stderr(predicate::str::contains("found 2"))
-    .stderr(predicate::str::contains("overlap"));
+    .stderr(predicate::str::contains(
+        "2 matches found, but they overlap (lines 1-2 and 2-3)",
+    ))
+    .stderr(predicate::str::contains("add a nearby line"));
     assert_eq!(read(&dir, "ov.txt"), "x\nx\nx\n");
+}
+
+/// #15: count が一致数と同じでも「expected 2, found 2」とは言わない。重なりを見出しにする。
+#[test]
+fn overlap_with_matching_count_names_the_overlap() {
+    let dir = setup(&[("ov.txt", "x\nx\nx\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== ov.txt\n<<<<<<< OLD count=2\nx\nx\n=======\ny\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "2 matches found, but they overlap",
+    ))
+    .stderr(predicate::str::contains("expected").not());
+}
+
+/// #15: 行の中の重なりは列で示し、ヒントは「前後の文字を足す」。
+#[test]
+fn overlap_within_a_line_shows_columns() {
+    let dir = setup(&[("a.txt", "aaa\n")]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "old": "aa", "new": "b"}]}),
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "2 matches found, but they overlap (line 1, columns 1-2 and 2-3)",
+    ))
+    .stderr(predicate::str::contains(
+        "add the characters before or after it",
+    ))
+    .stderr(predicate::str::contains("nearby line").not());
+}
+
+/// #14: 行の途中にしかない OLD は「行の途中」と 1 回だけ言う。
+#[test]
+fn old_in_the_middle_of_a_line_is_named_once() {
+    let dir = setup(&[("mid.txt", "aa Approval Gate bb\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== mid.txt\n<<<<<<< OLD\nApproval Gate\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "OLD line 1 is in the middle of line 1 (text before and after it on that line is missing)",
+    ))
+    .stderr(predicate::str::contains("only the end").not())
+    .stderr(predicate::str::contains("only the start").not());
+}
+
+/// #14: FROM でも、前にも後ろにも続きがあれば「行の途中」と言う。
+#[test]
+fn from_in_the_middle_of_a_line_is_not_called_the_end() {
+    let dir = setup(&[("mid.txt", "aa Approval Gate bb\nend\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== mid.txt\n<<<<<<< FROM\nApproval Gate\n<<<<<<< TO\nend\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "FROM line 1 is in the middle of line 1",
+    ))
+    .stderr(predicate::str::contains("only the end").not());
 }
 
 #[test]
