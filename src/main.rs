@@ -36,16 +36,20 @@ Block format (stdin not starting with `{`):
                            replace from the FROM lines up to, not including, the
                            first TO lines after them (FROM is replaced, TO is kept;
                            to delete an end marker line too, use the line after it
-                           as TO; NEW must not end with the TO lines)
+                           as TO; NEW must not end with the TO lines). FROM and TO
+                           pick lines: their last line may be just the start of a
+                           line, e.g. the first words of a long paragraph
   Blocks are whole lines: they match only at line starts and follow the file's
-  line endings (LF or CRLF).
+  line endings (LF or CRLF). Trailing whitespace on marker lines is ignored.
   Markers may be longer than 7 characters. A block opened with `<<<<<<<<< OLD`
   (9) ends only at `=========` and `>>>>>>>>> NEW` (9), so lines with 7-character
   markers inside it are plain text.
   <<<<<<< BEFORE / <<<<<<< AFTER, then ======= and >>>>>>> NEW (count=N allowed)
                            insert the NEW lines before/after each line that contains
                            the BEFORE/AFTER text; that text may be any part of the
-                           line, since no existing line is rewritten
+                           line, since no existing line is rewritten. Several AFTER
+                           blocks on one anchor stack up in reverse (each goes right
+                           below the anchor), so put the lines in one NEW instead
 
 JSON (stdin starting with `{`):
   {"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1},
@@ -56,8 +60,11 @@ JSON (stdin starting with `{`):
 Rules:
   - Matching is exact; whitespace is never matched loosely.
   - The number of matches must equal the count (default 1). FROM must match once.
+    Overlapping matches (such as repeated identical lines) count, and are an error.
   - Edits to the same file apply in order; each one sees the result of the previous.
-  - Nothing is written unless every edit matches. Each file is replaced via temp file + rename.
+  - Nothing is written unless every edit matches. Each file is replaced via temp file
+    + rename, which breaks hard links to it (rpatch warns). A UTF-8 BOM is kept and
+    takes no part in matching.
 
 Tips:
   - Always quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
@@ -99,6 +106,10 @@ struct FileState {
     original: String,
     content: String,
     perms: Permissions,
+    /// The file started with a UTF-8 BOM, which is kept out of `original`/`content`.
+    bom: bool,
+    /// Number of hard links to the file.
+    links: u64,
     applied: Vec<usize>,
     skipped: Vec<usize>,
     /// Byte ranges in `content` that the applied edits changed.
@@ -196,6 +207,7 @@ fn run() -> Result<(), u8> {
                 path: &f.path,
                 original: &f.original,
                 content: &f.content,
+                prefix: if f.bom { "\u{feff}" } else { "" },
                 perms: &f.perms,
             })
             .collect();
@@ -214,6 +226,13 @@ fn run() -> Result<(), u8> {
             f.applied.len(),
             f.changed_lines()
         );
+        if f.links > 1 && f.content != f.original {
+            let _ = writeln!(
+                out,
+                "  warning: {} had {} hard links; it is replaced via rename, so the other links keep the old content",
+                f.display, f.links
+            );
+        }
         for note in &f.notes {
             let _ = writeln!(out, "  {note}");
         }
@@ -304,7 +323,8 @@ fn load_files(edits: &[Edit], report: &mut Report) -> (Vec<FileState>, Vec<Optio
             .and_then(|path| match by_path.get(&path) {
                 Some(&k) => Ok(k),
                 None => {
-                    let (original, perms) = read_file(&path).map_err(|err| load_failure(e, err))?;
+                    let (original, perms, bom, links) =
+                        read_file(&path).map_err(|err| load_failure(e, err))?;
                     by_path.insert(path.clone(), files.len());
                     files.push(FileState {
                         display: e.file.clone(),
@@ -312,6 +332,8 @@ fn load_files(edits: &[Edit], report: &mut Report) -> (Vec<FileState>, Vec<Optio
                         content: original.clone(),
                         original,
                         perms,
+                        bom,
+                        links,
                         applied: Vec::new(),
                         skipped: Vec::new(),
                         changes: Vec::new(),
@@ -363,12 +385,22 @@ fn load_failure(e: &Edit, err: io::Error) -> LoadFailure {
     }
 }
 
-fn read_file(path: &Path) -> io::Result<(String, Permissions)> {
+/// Reads a file as UTF-8. Returns the text without a leading BOM, the permissions,
+/// whether there was a BOM, and the number of hard links.
+fn read_file(path: &Path) -> io::Result<(String, Permissions, bool, u64)> {
     let bytes = fs::read(path)?;
-    let perms = fs::metadata(path)?.permissions();
-    let text = String::from_utf8(bytes)
+    let meta = fs::metadata(path)?;
+    #[cfg(unix)]
+    let links = std::os::unix::fs::MetadataExt::nlink(&meta);
+    #[cfg(not(unix))]
+    let links = 1;
+    let mut text = String::from_utf8(bytes)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not valid UTF-8 text"))?;
-    Ok((text, perms))
+    let bom = text.starts_with('\u{feff}');
+    if bom {
+        text.drain(..'\u{feff}'.len_utf8());
+    }
+    Ok((text, meta.permissions(), bom, links))
 }
 
 fn apply_edits(

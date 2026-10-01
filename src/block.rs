@@ -211,7 +211,10 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
     let mut file: Option<String> = None;
     let mut block: Option<Block> = None;
 
-    for (i, line) in text.lines().enumerate() {
+    for (i, raw) in text.lines().enumerate() {
+        // Marker lines are recognized without trailing whitespace, which is invisible
+        // and easily left by an editor or a model. Content lines are kept as written.
+        let line = raw.trim_end();
         let n = i + 1;
         let Some(b) = block.as_mut() else {
             if let Some(path) = line.strip_prefix("=== ") {
@@ -304,7 +307,7 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                     Part::To => &mut b.second,
                     Part::New => &mut b.new,
                 };
-                push_line(buf, line);
+                push_line(buf, raw);
             }
         }
     }

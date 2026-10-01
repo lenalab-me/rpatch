@@ -9,12 +9,14 @@ use crate::text::{LineIndex, gutter, line_list};
 const MAX_LOCATIONS: usize = 10;
 const MAX_BLOCK_LINES: usize = 8;
 
-/// `field` ("old" or "from") matched, but not `expected` times.
+/// `field` matched, but not `expected` times. `block`: the edit was written in the block
+/// format, so hints use its syntax.
 pub fn count_mismatch(
     content: &str,
     positions: &[usize],
     expected: usize,
     field: &str,
+    block: bool,
 ) -> Vec<String> {
     let idx = LineIndex::new(content);
     let mut lines: Vec<usize> = positions.iter().map(|&p| idx.line_of(p)).collect();
@@ -34,6 +36,10 @@ pub fn count_mismatch(
         )
     } else if field != "old" {
         format!("hint: add surrounding text to \"{field}\" so that it matches once")
+    } else if block {
+        format!(
+            "hint: add surrounding lines to OLD to pick one, or open the block with `<<<<<<< OLD count={found}` to replace all"
+        )
     } else if found > expected {
         format!(
             "hint: add surrounding text to \"old\" to pick one, or set \"count\": {found} to replace all"
@@ -187,7 +193,9 @@ fn divergence_hint(content: &str, old: &str, field: &str, start: usize) -> Optio
 
 /// Compares the first non-blank line of `old` against every line of the file from `start`.
 fn closest_line_hint(content: &str, old: &str, field: &str, start: usize) -> Option<Vec<String>> {
-    let target = old.lines().map(str::trim).find(|l| !l.is_empty())?;
+    // Compare without surrounding whitespace, but show the line as written.
+    let written = old.lines().find(|l| !l.trim().is_empty())?;
+    let target = written.trim();
     let target_len = target.chars().count();
     let idx = LineIndex::new(content);
     let first = idx.line_of(start);
@@ -209,7 +217,7 @@ fn closest_line_hint(content: &str, old: &str, field: &str, start: usize) -> Opt
             "closest line to the first line of \"{field}\" ({:.0}% similar):",
             score * 100.0
         ),
-        gutter(field, target),
+        gutter(field, written),
         gutter(line, idx.line(content, line)),
     ])
 }

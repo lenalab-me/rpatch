@@ -26,3 +26,7 @@
    - 案: 入力の読み取りの時点で「BEFORE/AFTER の text は 1 行だけ（2 行あった）」と終了コード 2 で止める。複数行のアンカーを許す必要はないと思う（場所を決めるには 1 行で足りる。足りないときは count か、より長い一部を書けばよい）。
 2. **JSON には before / after がない**（`unknown field after`。フィールドの一覧が出るので、すぐ分かる）。BEFORE / AFTER は行の一部を書けるので、JSON に逃げる理由がもともとないため、困らない。ヘルプの JSON の節に「BEFORE/AFTER は区切り形式だけ」と一言あると、探さずに済む。
 3. アンカーが複数に当たったときのヒント（`add surrounding text to "after" so that it matches once`）は、BEFORE / AFTER なら「全部に入れたいなら count=N」も添えるとよい。OLD と違って、複数の行に同じものを足したい場面（例: 各セクションの見出しの後ろ）がありうる。
+
+## その後
+
+- 1〜3 は v0.5.1（96497a2）で直った（2026-10-01 に確かめた）。以降の気づきは GitHub の Issue（`lenalab-me/rpatch`）に 1 件ずつ起票する。

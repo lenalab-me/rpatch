@@ -773,7 +773,9 @@ fn range_to_not_found_looks_after_from() {
 
 /// レビューの 2.: 行の一部だけを書いたときは「空白違い」ではなく「行の一部」と言う。
 #[test]
-fn block_partial_line_is_reported_as_such() {
+// v0.6.0 (#7) から、FROM / TO の最後の行は行の先頭部分だけでよくなった。
+// このケース（`**Why:**` だけを書いた FROM）は、レビュー当時は失敗だったが、今は通る。
+fn from_written_as_the_start_of_a_line_now_works() {
     let original = "# memo\n\n**Why:** 仕様は「速さ」ではなく正確さ\n**How:** 試す\n";
     let dir = setup(&[("m.md", original)]);
     rpatch_raw(
@@ -781,12 +783,8 @@ fn block_partial_line_is_reported_as_such() {
         &[],
         "=== m.md\n<<<<<<< FROM\n**Why:**\n<<<<<<< TO\n**How:**\n=======\nx\n>>>>>>> NEW\n",
     )
-    .code(1)
-    .stderr(predicate::str::contains("\"from\" not found"))
-    .stderr(predicate::str::contains("only as part of a line"))
-    .stderr(predicate::str::contains("3 | **Why:**"))
-    .stderr(predicate::str::contains("use JSON"))
-    .stderr(predicate::str::contains("different whitespace").not());
+    .success();
+    assert_eq!(read(&dir, "m.md"), "# memo\n\nx\n**How:** 試す\n");
 }
 
 /// レビューの 3. の改善案: 記号を長くすれば、7 個の記号の行を中身として書ける。
@@ -1102,4 +1100,202 @@ fn insert_count_mismatch_suggests_count() {
     )
     .code(1)
     .stderr(predicate::str::contains("`<<<<<<< AFTER count=2`"));
+}
+
+// --- Issue #5-#13 ------------------------------------------------------------
+
+/// #8: 重なり合う一致も数える。曖昧なら、count に関係なく失敗にする。
+#[test]
+fn overlapping_matches_are_ambiguous_block() {
+    let dir = setup(&[("ov.txt", "x\nx\nx\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== ov.txt\n<<<<<<< OLD\nx\nx\n=======\ny\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("found 2"))
+    .stderr(predicate::str::contains("overlap"));
+    assert_eq!(read(&dir, "ov.txt"), "x\nx\nx\n");
+}
+
+#[test]
+fn overlapping_matches_are_ambiguous_json() {
+    let dir = setup(&[("a.txt", "aaa\n")]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "old": "aa", "new": "b"}]}),
+    )
+    .code(1)
+    .stderr(predicate::str::contains("overlap"));
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "old": "aa", "new": "b", "count": 2}]}),
+    )
+    .code(1)
+    .stderr(predicate::str::contains("overlap"));
+}
+
+#[test]
+fn overlapping_from_is_ambiguous() {
+    let dir = setup(&[("a.txt", "x\nx\nx\nend\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< FROM\nx\nx\n<<<<<<< TO\nend\n=======\ny\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("overlap"));
+}
+
+/// #6: 複数行の OLD の最後の行だけが行の一部なら、その行を指す。
+#[test]
+fn partial_last_line_of_multiline_old_is_named() {
+    let original = "function render() {\n  if (!data) return;\n  // Do not redraw under someone typing a verdict (the next poll)\n  draw();\n}\n";
+    let dir = setup(&[("r.js", original)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== r.js\n<<<<<<< OLD\nfunction render() {\n  if (!data) return;\n  // Do not redraw under someone typing a verdict\n=======\nX\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("OLD line 3 is only the start of line 3"))
+    .stderr(predicate::str::contains(
+        "3 |   // Do not redraw under someone typing a verdict (the next poll)",
+    ));
+}
+
+#[test]
+fn partial_first_line_names_missing_leading_text() {
+    let dir = setup(&[("f.rs", "fn f() {\n    foo();\n}\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== f.rs\n<<<<<<< OLD\n  foo();\n=======\n  bar();\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "OLD line 1 is only the end of line 2",
+    ));
+}
+
+/// #9: 区切りの行の末尾の空白は無視する。
+#[test]
+fn markers_with_trailing_whitespace_are_recognized() {
+    let dir = setup(&[("a.mjs", "  const a = 1;\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.mjs\n<<<<<<< OLD \n  const a = 1;\n======= \n  const a = 2;\n>>>>>>> NEW\t\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.mjs"), "  const a = 2;\n");
+}
+
+/// #10: 一番似ている行の表示で、入力側の行も空白付きのまま出す。
+#[test]
+fn closest_line_shows_input_with_its_indentation() {
+    let dir = setup(&[("a.mjs", "function f(a, b) {\n  return a + b;\n}\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.mjs\n<<<<<<< OLD\n  retrun a + b;\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("old |   retrun a + b;"));
+}
+
+/// #11: BOM は読むときに外し、書くときに付け直す。
+#[test]
+fn utf8_bom_is_kept_and_does_not_block_the_first_line() {
+    let dir = setup(&[("bom.txt", "\u{feff}bom line\nnext\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== bom.txt\n<<<<<<< OLD\nbom line\n=======\nBOM LINE\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout("M bom.txt  edits=1  at_lines=1\n");
+    assert_eq!(read(&dir, "bom.txt"), "\u{feff}BOM LINE\nnext\n");
+}
+
+/// #7: FROM / TO の最後の行は、行の先頭部分だけでもよい。照合は行の先頭から。
+#[test]
+fn from_and_to_may_be_the_start_of_a_line() {
+    let original = "# runbook\n- 1問は「準備 → 作戦 → 実行」で進む。とても長い行がここに続く。\nold detail\n## 次の節 とても長い見出し\nkeep\n";
+    let dir = setup(&[("d.md", original)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== d.md\n<<<<<<< FROM\n- 1問は「準備\n<<<<<<< TO\n## 次の節\n=======\n- new text\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("replaced lines 2-3 (2 lines) with 1 line"));
+    assert_eq!(
+        read(&dir, "d.md"),
+        "# runbook\n- new text\n## 次の節 とても長い見出し\nkeep\n"
+    );
+}
+
+#[test]
+fn from_must_still_start_at_a_line_start() {
+    let dir = setup(&[("f.rs", "fn f() {\n    foo();\n}\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== f.rs\n<<<<<<< FROM\nfoo();\n<<<<<<< TO\n}\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("\"from\" not found"));
+}
+
+#[test]
+fn new_ending_with_the_kept_to_line_is_rejected_for_prefix_to() {
+    let dir = setup(&[("d.md", "## A\nold\n## B title\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== d.md\n<<<<<<< FROM\n## A\n<<<<<<< TO\n## B\n=======\n## A\nnew\n## B title\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("would appear twice"));
+}
+
+/// #5: 区切り形式では、count のヒントも区切り形式の書き方にする。
+#[test]
+fn block_count_hint_uses_block_syntax() {
+    let dir = setup(&[("a.txt", "x\ny\nx\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\nx\n=======\nz\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("`<<<<<<< OLD count=2`"));
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "old": "x", "new": "z"}]}),
+    )
+    .code(1)
+    .stderr(predicate::str::contains("\"count\": 2"));
+}
+
+/// #13: ハードリンクは切れるので、警告する。
+#[cfg(unix)]
+#[test]
+fn hard_link_warning() {
+    let dir = setup(&[("app.mjs", "const a = 1;\n")]);
+    fs::hard_link(dir.path().join("app.mjs"), dir.path().join("hard.mjs")).unwrap();
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== app.mjs\n<<<<<<< OLD\nconst a = 1;\n=======\nconst a = 10;\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "warning: app.mjs had 2 hard links",
+    ));
 }

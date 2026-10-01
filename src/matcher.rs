@@ -21,6 +21,7 @@ pub struct Mismatch {
 /// Returns the spans to replace, ascending and non-overlapping.
 pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
     let crlf = edit.lines && content.contains("\r\n");
+    let nl = if crlf { "\r\n" } else { "\n" };
     let new = adapt(&edit.new, crlf);
     match &edit.target {
         Target::Text(old) => {
@@ -34,27 +35,30 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                 })
                 .collect();
             if edit.lines {
-                spans.extend(last_line_match(content, &old, &new, crlf, spans.last()));
-            }
-            if spans.len() == edit.count {
-                return Ok(spans);
+                spans.extend(last_line_match(content, &old, &new, nl, spans.last()));
             }
             let positions: Vec<usize> = spans.iter().map(|s| s.start).collect();
+            let overlap = spans.windows(2).any(|w| w[1].start < w[0].end);
+            if spans.len() == edit.count && !overlap {
+                return Ok(spans);
+            }
+            let found = Found {
+                positions: &positions,
+                overlap,
+            };
             Err(mismatch(
-                "old", content, &old, &positions, edit.count, edit.lines,
+                "old", content, &old, &found, edit.count, edit.lines,
             ))
         }
         Target::Insert { anchor, after } => {
             let field = if *after { "after" } else { "before" };
-            let nl = if crlf { "\r\n" } else { "\n" };
             let anchor = adapt(anchor, crlf);
             let text = anchor.strip_suffix(nl).unwrap_or(&anchor);
             // Part of a line is enough: inserting at line boundaries rewrites no line.
             let positions = occurrences(content, text, false);
-            if positions.len() != edit.count {
-                return Err(mismatch(
-                    field, content, text, &positions, edit.count, false,
-                ));
+            let found = Found::new(&positions, text.len());
+            if positions.len() != edit.count || found.overlap {
+                return Err(mismatch(field, content, text, &found, edit.count, true));
             }
             let points: Vec<usize> = positions
                 .iter()
@@ -99,17 +103,39 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
         Target::Range { from, to } => {
             let from = adapt(from, crlf);
             let to = adapt(to, crlf);
-            let starts = occurrences(content, &from, edit.lines);
+            // In the block format, FROM and TO match at line starts, and their last line
+            // may be only the start of a line: they pick lines, they do not copy them.
+            let (from_text, to_text) = if edit.lines {
+                (
+                    from.strip_suffix(nl).unwrap_or(&from),
+                    to.strip_suffix(nl).unwrap_or(&to),
+                )
+            } else {
+                (from.as_ref(), to.as_ref())
+            };
+            let starts = occurrences(content, from_text, edit.lines);
+            let found = Found::new(&starts, from_text.len());
             if starts.len() != 1 {
-                return Err(mismatch("from", content, &from, &starts, 1, edit.lines));
+                return Err(mismatch("from", content, &from, &found, 1, edit.lines));
             }
             let start = starts[0];
-            let after = start + from.len();
-            let Some(&q) = occurrences(&content[after..], &to, edit.lines).first() else {
-                return Err(to_not_found(content, &to, start, after, edit.lines));
+            let after = if edit.lines {
+                line_end(content, start + from_text.len())
+            } else {
+                start + from_text.len()
+            };
+            let Some(&q) = occurrences(&content[after..], to_text, edit.lines).first() else {
+                return Err(to_not_found(
+                    content, &to, to_text, start, after, edit.lines,
+                ));
             };
             let end = after + q;
-            if new.ends_with(to.as_ref()) {
+            let kept = if edit.lines {
+                &content[end..line_end(content, end + to_text.len())]
+            } else {
+                to_text
+            };
+            if new.ends_with(kept) {
                 // An easy slip: TO is kept, so repeating it at the end of NEW doubles it.
                 let idx = LineIndex::new(content);
                 let line = idx.line_of(end);
@@ -132,6 +158,21 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
     }
 }
 
+/// Where a text matched, and whether any of the matches overlap.
+struct Found<'a> {
+    positions: &'a [usize],
+    overlap: bool,
+}
+
+impl<'a> Found<'a> {
+    fn new(positions: &'a [usize], len: usize) -> Self {
+        Found {
+            positions,
+            overlap: positions.windows(2).any(|w| w[1] < w[0] + len),
+        }
+    }
+}
+
 fn line_start(content: &str, p: usize) -> usize {
     content[..p].rfind('\n').map_or(0, |i| i + 1)
 }
@@ -139,6 +180,10 @@ fn line_start(content: &str, p: usize) -> usize {
 /// The offset just past the line break of the line that contains `p`.
 fn line_end(content: &str, p: usize) -> usize {
     content[p..].find('\n').map_or(content.len(), |i| p + i + 1)
+}
+
+fn at_line_start(content: &str, p: usize) -> bool {
+    p == 0 || content.as_bytes()[p - 1] == b'\n'
 }
 
 fn adapt(s: &str, crlf: bool) -> Cow<'_, str> {
@@ -149,19 +194,18 @@ fn adapt(s: &str, crlf: bool) -> Cow<'_, str> {
     }
 }
 
-/// Non-overlapping matches, left to right. With `line_start`, only matches at the
-/// start of a line count (and a skipped match does not hide a later overlapping one).
+/// Every match, left to right, overlapping ones included: uniqueness has to count
+/// them, or an ambiguous text would silently replace its first match. With
+/// `line_start`, only matches at the start of a line count.
 fn occurrences(content: &str, needle: &str, line_start: bool) -> Vec<usize> {
     let mut out = Vec::new();
     let mut from = 0;
     while let Some(i) = content[from..].find(needle) {
         let p = from + i;
-        if !line_start || p == 0 || content.as_bytes()[p - 1] == b'\n' {
+        if !line_start || at_line_start(content, p) {
             out.push(p);
-            from = p + needle.len();
-        } else {
-            from = p + content[p..].chars().next().map_or(1, char::len_utf8);
         }
+        from = p + content[p..].chars().next().map_or(1, char::len_utf8);
     }
     out
 }
@@ -172,20 +216,18 @@ fn last_line_match(
     content: &str,
     old: &str,
     new: &str,
-    crlf: bool,
+    nl: &str,
     previous: Option<&Span>,
 ) -> Option<Span> {
     if content.ends_with('\n') {
         return None;
     }
-    let nl = if crlf { "\r\n" } else { "\n" };
     let old = old.strip_suffix(nl)?;
     if old.is_empty() || !content.ends_with(old) {
         return None;
     }
     let p = content.len() - old.len();
-    let at_line_start = p == 0 || content.as_bytes()[p - 1] == b'\n';
-    if !at_line_start || previous.is_some_and(|s| s.end > p) {
+    if !at_line_start(content, p) || previous.is_some_and(|s| s.end > p) {
         return None;
     }
     Some(Span {
@@ -199,74 +241,119 @@ fn mismatch(
     field: &str,
     content: &str,
     needle: &str,
-    positions: &[usize],
+    found: &Found,
     expected: usize,
-    lines: bool,
+    block: bool,
 ) -> Mismatch {
+    let positions = found.positions;
     if !positions.is_empty() {
-        let found = positions.len();
+        let n = positions.len();
         let counted = format!(
-            "expected {expected} match{}, found {found}",
-            if expected == 1 { "" } else { "es" }
+            "expected {expected} match{}, found {n}{}",
+            if expected == 1 { "" } else { "es" },
+            if found.overlap { " (overlapping)" } else { "" }
         );
+        let mut details = diagnose::count_mismatch(content, positions, expected, field, block);
+        if found.overlap {
+            details.pop();
+            details.push(format!(
+                "hint: the matches overlap (such as repeated identical lines), so they can be neither told apart nor all replaced; add a nearby line to \"{field}\" that makes it unique"
+            ));
+        }
         return Mismatch {
             headline: if field == "old" {
                 counted
             } else {
                 format!("\"{field}\": {counted}")
             },
-            details: diagnose::count_mismatch(content, positions, expected, field),
+            details,
         };
     }
 
     let headline = format!("\"{field}\" not found");
-    let details = match lines.then(|| partial_line(content, needle, 0)).flatten() {
+    let details = match block
+        .then(|| partial_line(content, needle, 0, field))
+        .flatten()
+    {
         Some(details) => details,
         None => diagnose::not_found(content, needle, field, 0),
     };
     Mismatch { headline, details }
 }
 
-/// Block texts are whole lines. If the text is in `content[start..]` only as part of a
-/// line (leading whitespace left out, or only the start of a line written), say so.
-fn partial_line(content: &str, needle: &str, start: usize) -> Option<Vec<String>> {
-    let text = needle.strip_suffix('\n')?;
+/// Block texts match at line starts. If the text is in `content[start..]` only as part of
+/// a line, say which of its lines is cut short: the first one (leading text such as
+/// indentation left out) or, for OLD, the last one (only the start of a line written).
+fn partial_line(content: &str, needle: &str, start: usize, field: &str) -> Option<Vec<String>> {
+    let text = needle.strip_suffix('\n').unwrap_or(needle);
     let text = text.strip_suffix('\r').unwrap_or(text);
     if text.trim().is_empty() {
         return None;
     }
-    let loose = occurrences(&content[start..], text, false);
-    if loose.is_empty() {
+    let loose: Vec<usize> = occurrences(&content[start..], text, false)
+        .into_iter()
+        .map(|p| start + p)
+        .collect();
+    let &p = loose.first()?;
+    let end = p + text.len();
+    let cut_start = !at_line_start(content, p);
+    // FROM and TO may stop early; OLD has to reach the end of its last line.
+    let cut_end =
+        field == "old" && !content[end..].starts_with(['\n', '\r']) && end < content.len();
+    if !cut_start && !cut_end {
         return None;
     }
+
     let idx = LineIndex::new(content);
-    let mut lines: Vec<usize> = loose.iter().map(|&p| idx.line_of(start + p)).collect();
-    lines.dedup();
-    let mut out = vec![format!(
-        "found only as part of a line (the block format matches whole lines), at {}:",
-        line_list(&lines)
-    )];
-    out.extend(
-        lines
-            .iter()
-            .take(5)
-            .map(|&l| gutter(l, idx.line(content, l))),
-    );
-    out.push(
-        "hint: copy the whole lines, including leading whitespace, or use JSON to match part of a line; to only add lines next to it, use BEFORE/AFTER, which accept part of a line"
-            .into(),
-    );
+    let name = field.to_uppercase();
+    let mut out =
+        vec!["found only as part of a line (the block format matches whole lines):".to_string()];
+    if cut_start {
+        let l = idx.line_of(p);
+        out.push(format!(
+            "{name} line 1 is only the end of line {l} (text at the start of the line, such as indentation, is missing):"
+        ));
+        out.push(gutter(l, idx.line(content, l)));
+    }
+    if cut_end {
+        let l = idx.line_of(end);
+        out.push(format!(
+            "{name} line {} is only the start of line {l}:",
+            text.lines().count()
+        ));
+        out.push(gutter(l, idx.line(content, l)));
+    }
+    if loose.len() > 1 {
+        let mut others: Vec<usize> = loose[1..].iter().map(|&q| idx.line_of(q)).collect();
+        others.dedup();
+        out.push(format!("(also found as part of {})", line_list(&others)));
+    }
+    out.push(if field == "old" {
+        "hint: copy the whole lines, including leading whitespace, or use JSON to match part of a line; to only add lines next to it, use BEFORE/AFTER, which accept part of a line".into()
+    } else {
+        format!("hint: {name} has to start at the start of a line, including leading whitespace (its last line may stop early)")
+    });
     Some(out)
 }
 
-fn to_not_found(content: &str, to: &str, from_start: usize, after: usize, lines: bool) -> Mismatch {
+fn to_not_found(
+    content: &str,
+    to: &str,
+    to_text: &str,
+    from_start: usize,
+    after: usize,
+    block: bool,
+) -> Mismatch {
     let idx = LineIndex::new(content);
     let headline = format!(
         "\"to\" not found after \"from\" (line {})",
         idx.line_of(from_start)
     );
-    let before = occurrences(&content[..from_start], to, lines);
-    let details = match lines.then(|| partial_line(content, to, after)).flatten() {
+    let before = occurrences(&content[..from_start], to_text, block);
+    let details = match block
+        .then(|| partial_line(content, to, after, "to"))
+        .flatten()
+    {
         Some(details) => details,
         None if !before.is_empty() => {
             let mut at: Vec<usize> = before.iter().map(|&p| idx.line_of(p)).collect();
@@ -282,14 +369,13 @@ fn to_not_found(content: &str, to: &str, from_start: usize, after: usize, lines:
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn line_start_matching_does_not_skip_overlaps() {
-        // The match at offset 1 starts mid-line; the overlapping one at offset 3 does not.
+    fn occurrences_include_overlapping_matches() {
         assert_eq!(occurrences("xa\na\na\n", "a\na\n", true), vec![3]);
-        assert_eq!(occurrences("xa\na\na\n", "a\na\n", false), vec![1]);
+        assert_eq!(occurrences("xa\na\na\n", "a\na\n", false), vec![1, 3]);
+        assert_eq!(occurrences("aaa", "aa", false), vec![0, 1]);
     }
 }

@@ -7,6 +7,8 @@ pub struct Pending<'a> {
     pub path: &'a Path,
     pub original: &'a str,
     pub content: &'a str,
+    /// Written before both `content` and `original`, such as a UTF-8 BOM.
+    pub prefix: &'a str,
     pub perms: &'a Permissions,
 }
 
@@ -18,10 +20,10 @@ pub fn commit(files: &[Pending]) -> Result<(), String> {
         }
     }
     for (i, f) in files.iter().enumerate() {
-        if let Err(e) = write_atomic(f.path, f.content, f.perms) {
+        if let Err(e) = write_atomic(f.path, f.prefix, f.content, f.perms) {
             let failed: Vec<&str> = files[..i]
                 .iter()
-                .filter(|g| write_atomic(g.path, g.original, g.perms).is_err())
+                .filter(|g| write_atomic(g.path, g.prefix, g.original, g.perms).is_err())
                 .map(|g| g.display)
                 .collect();
             return Err(if failed.is_empty() {
@@ -39,11 +41,12 @@ pub fn commit(files: &[Pending]) -> Result<(), String> {
 }
 
 /// Writes to a temporary file next to `path`, then renames it over `path`.
-fn write_atomic(path: &Path, content: &str, perms: &Permissions) -> io::Result<()> {
+fn write_atomic(path: &Path, prefix: &str, content: &str, perms: &Permissions) -> io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
     let mut tmp = tempfile::Builder::new()
         .prefix(".rpatch-")
         .tempfile_in(dir)?;
+    tmp.write_all(prefix.as_bytes())?;
     tmp.write_all(content.as_bytes())?;
     tmp.as_file().sync_all()?;
     fs::set_permissions(tmp.path(), perms.clone())?;
