@@ -168,6 +168,12 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 
 ## 進み具合
 
+- 2026-10-02: 指示なしの beat-jam のセッションが 15:14 UTC まで続いたので、全体（11:48〜15:14 UTC、サブエージェント 3 つを含めて呼び出し 404 件）を測り直した。結果は `tools/log-analysis/after-2026-10-01-beatjam.json`。
+  - python での置換 0、Edit 7、**rpatch での編集 19**、sd 11。python・Edit・rpatch の中で rpatch が 73%（ベースラインでは python が 75% だった）。
+  - 前半（AWS CLI の操作）は Edit 6 と sd、後半（setup.sh、jam-preflight.sh、steps.html、runbook の md などの書き換え）は rpatch 19 と Edit 1。複数箇所や複数ブロックの編集になると rpatch を選んでいた。ブロックは OLD 26、FROM 3、BEFORE 2、AFTER 4。
+  - 失敗は 3 回で、3 回とも「長い 1 行の一部だけを OLD に書く」。2 回は #14 で入れた「行の途中にある」、1 回は「行の先頭だけ」の診断。どれも 1 分以内に直った（Edit や `sd -F` の部分一致に切り替えたのが 2 回、rpatch で書き直したのが 1 回）。失敗した呼び出しでは何も書き込まれていない。
+  - 編集の直後に確かめた割合は 6%（rpatch の `at_lines=` の出力を信頼している）。
+
 - 2026-10-01: rpatch を使うよう指示していない beat-jam のセッション（11:48〜12:44 UTC、ツール呼び出し 152 件）を測った。python での置換は 0 回（ベースラインは編集の 75%）。編集は Edit 6 回（1 つの md への短い書き換え）と sd 4 回（1 行の置換）で、rpatch の編集は 0 回だった（`--help` を 1 回読んでいる）。作業の大半は AWS CLI の操作で、rpatch が向く複数行・複数箇所の編集がなかった。JSON のテンプレートは node のスクリプトで書き換えていた。1 セッションだけなので、#4 の判断にはまだ足りない。
   - `metrics.py` を直した。`rpatch --help` のような編集しない呼び出しを `rpatch_discovery` として別に数える（それまでは rpatch の編集に入っていた）。MCP 経由の rpatch（`rpatch_mcp`）も数える。
 
