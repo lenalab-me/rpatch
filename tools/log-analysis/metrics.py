@@ -23,6 +23,7 @@ def main():
     ap.add_argument('--since', default='')
     ap.add_argument('--until', default='9999')
     ap.add_argument('--exclude-proj', action='append', default=[])
+    ap.add_argument('--only-proj', action='append', default=[])
     a = ap.parse_args()
 
     sessions = collections.defaultdict(list)
@@ -32,6 +33,8 @@ def main():
         if not (a.since <= ts < a.until):
             continue
         if any(x in c['proj'] for x in a.exclude_proj):
+            continue
+        if a.only_proj and not any(x in c['proj'] for x in a.only_proj):
             continue
         sessions[(c['proj'], c['file'])].append(c)
 
@@ -73,7 +76,7 @@ def main():
 
     edits = n['python_replace'] + n['edit'] + n['rpatch']
     out = {
-        'since': a.since, 'until': a.until, 'exclude_proj': a.exclude_proj,
+        'since': a.since, 'until': a.until, 'exclude_proj': a.exclude_proj, 'only_proj': a.only_proj,
         'sessions': len(sessions),
         **{k: n[k] for k in [
             'tool_calls', 'python_replace', 'python_replace_unguarded', 'python_replace_failed',
