@@ -48,6 +48,8 @@ def edit_event(c):
         if RPATCH_DRY_RUN.search(cmd):
             return None
         files = RPATCH_HEADER.findall(cmd) + JSON_FILE.findall(cmd)
+        if not files:
+            return None  # rpatch -V や --help など、編集しない呼び出し
         return 'rpatch', {base(f) for f in files}, 'nothing written' in res
     if PY.search(cmd) and REPLACE.search(cmd) and WRITE.search(cmd):
         files = FILE_IN_QUOTES.findall(cmd)
@@ -86,8 +88,10 @@ def rework(calls, stats):
         kind, files, failed = events[i]
         s = stats[kind]
         s['events'] += 1
+        s_len = calls[i].get('res_len') or 0
         if failed:
             s['failures'] += 1
+            s['failure_chars'].append(s_len)
             for j in idx[k + 1:]:
                 _, files2, failed2 = events[j]
                 if not failed2 and (files & files2 or not files or not files2):
@@ -104,8 +108,14 @@ def rework(calls, stats):
                 s['diff_flag'] += 1
             stop = idx[k + 1] if k + 1 < len(idx) else len(calls)
             window = calls[i + 1:min(i + 1 + CHECK_WINDOW, stop)]
-            if any(is_check(c, files) for c in window):
+            s['result_chars'] += s_len
+            checks = [c for c in window if is_check(c, files)]
+            check_len = sum(c.get('res_len') or 0 for c in checks)
+            if checks:
                 s['checked_after'] += 1
+                s['check_chars'] += check_len
+            # 1 回の編集とその確かめで、コンテキストに載った文字数
+            s['context_lens'].append(s_len + check_len)
 
 
 def summarize(stats):
@@ -124,6 +134,15 @@ def summarize(stats):
             'diff_flag': s['diff_flag'],
             'checked_after': s['checked_after'],
             'check_ratio': round(s['checked_after'] / s['ok'], 3) if s['ok'] else None,
+            # コンテキストに載った文字数（成功した編集 1 回あたり）: 編集した呼び出しそのものの
+            # 出力（rpatch の --diff や python の print を含む）と、直後の確かめの出力
+            'result_chars_per_ok': round(s['result_chars'] / s['ok']) if s['ok'] else None,
+            'check_chars_per_ok': round(s['check_chars'] / s['ok']) if s['ok'] else None,
+            'context_chars_per_ok': round((s['result_chars'] + s['check_chars']) / s['ok']) if s['ok'] else None,
+            'failure_chars_median': med(s['failure_chars']),
+            # 同じ呼び出しでつないだコマンド（node --check、git diff など）の出力も含む。
+            # python は置換と確かめを 1 回の呼び出しにまとめることが多いので、合計で比べる
+            'context_chars_median': med(s['context_lens']),
         }
     return out
 
@@ -152,7 +171,8 @@ def main():
 
     n = collections.Counter()
     rework_stats = collections.defaultdict(lambda: collections.defaultdict(int) | {
-        'recovery_calls': [], 'recovery_secs': []})
+        'recovery_calls': [], 'recovery_secs': [], 'failure_chars': [],
+        'context_lens': []})
     for calls in sessions.values():
         calls.sort(key=lambda c: c['idx'])
         rework(calls, rework_stats)
