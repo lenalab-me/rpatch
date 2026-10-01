@@ -1,16 +1,21 @@
 //! Explanations for edits whose `old` did not match the expected number of times.
 
-use crate::text::{LineIndex, gutter, join_lines};
+use crate::text::{LineIndex, gutter, line_list};
 
 const MAX_LOCATIONS: usize = 10;
 const MAX_BLOCK_LINES: usize = 8;
 
-/// `old` matched, but not `count` times.
-pub fn count_mismatch(content: &str, positions: &[usize], expected: usize) -> Vec<String> {
+/// `field` ("old" or "from") matched, but not `expected` times.
+pub fn count_mismatch(
+    content: &str,
+    positions: &[usize],
+    expected: usize,
+    field: &str,
+) -> Vec<String> {
     let idx = LineIndex::new(content);
     let mut lines: Vec<usize> = positions.iter().map(|&p| idx.line_of(p)).collect();
     lines.dedup();
-    let mut out = vec![format!("matches at lines {}", join_lines(&lines))];
+    let mut out = vec![format!("matches at {}", line_list(&lines))];
     for &l in lines.iter().take(MAX_LOCATIONS) {
         out.push(gutter(l, idx.line(content, l)));
     }
@@ -18,7 +23,9 @@ pub fn count_mismatch(content: &str, positions: &[usize], expected: usize) -> Ve
         out.push(format!("… and {} more", lines.len() - MAX_LOCATIONS));
     }
     let found = positions.len();
-    out.push(if found > expected {
+    out.push(if field != "old" {
+        format!("hint: add surrounding text to \"{field}\" so that it matches once")
+    } else if found > expected {
         format!(
             "hint: add surrounding text to \"old\" to pick one, or set \"count\": {found} to replace all"
         )

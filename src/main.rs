@@ -1,5 +1,7 @@
+mod block;
 mod diagnose;
 mod input;
+mod matcher;
 mod text;
 mod write;
 
@@ -12,17 +14,39 @@ use std::process::ExitCode;
 
 use similar::TextDiff;
 
-use crate::input::Edit;
+use crate::input::{Edit, Target};
+use crate::matcher::Span;
 use crate::text::LineIndex;
 
 const USAGE: &str = r#"rpatch - apply exact-match text replacements to files, all or nothing
 
 Usage: rpatch [--diff] [--dry-run] <<'EOF'
-{"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1}]}
+=== path/to/file
+<<<<<<< OLD
+lines to replace (written as is, no escaping)
+=======
+replacement lines (empty to delete the lines)
+>>>>>>> NEW
 EOF
 
-  - "old" must match exactly; whitespace is never matched loosely.
-  - The number of matches must equal "count" (default 1).
+Block format (stdin not starting with `{`):
+  === <file>               switch to a file; any number of blocks may follow
+  <<<<<<< OLD count=N      replace N matches instead of exactly 1
+  <<<<<<< FROM / <<<<<<< TO / ======= / >>>>>>> NEW
+                           replace from the FROM lines up to, not including, the
+                           first TO lines after them (FROM is replaced, TO is kept)
+  Blocks are whole lines: they match only at line starts and follow the file's
+  line endings (LF or CRLF). If the text has a line that is exactly `=======`,
+  use JSON instead.
+
+JSON (stdin starting with `{`):
+  {"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1},
+             {"file": "path", "from": "start text", "to": "end text", "new": "..."}]}
+  JSON texts are matched anywhere, not only at line starts.
+
+Rules:
+  - Matching is exact; whitespace is never matched loosely.
+  - The number of matches must equal the count (default 1). FROM must match once.
   - Edits to the same file apply in order; each one sees the result of the previous.
   - Nothing is written unless every edit matches. Each file is replaced via temp file + rename.
 
@@ -56,6 +80,8 @@ struct FileState {
     skipped: Vec<usize>,
     /// Byte offsets in `content` where replacement text starts.
     marks: Vec<usize>,
+    /// Extra lines printed under the file's summary line.
+    notes: Vec<String>,
     failed: bool,
 }
 
@@ -138,6 +164,9 @@ fn run() -> Result<(), u8> {
             f.applied.len(),
             lines.join(",")
         );
+        for note in &f.notes {
+            let _ = writeln!(out, "  {note}");
+        }
     }
     if opts.diff {
         for f in &files {
@@ -184,7 +213,7 @@ fn parse_args() -> Result<Option<Opts>, u8> {
 fn read_edits() -> Result<Vec<Edit>, u8> {
     let mut stdin = io::stdin();
     if stdin.is_terminal() {
-        eprint!("rpatch: expected JSON on stdin\n\n{USAGE}");
+        eprint!("rpatch: expected edits on stdin\n\n{USAGE}");
         return Err(EXIT_INPUT);
     }
     let mut text = String::new();
@@ -236,6 +265,7 @@ fn load_files(edits: &[Edit], report: &mut Report) -> (Vec<FileState>, Vec<Optio
                         applied: Vec::new(),
                         skipped: Vec::new(),
                         marks: Vec::new(),
+                        notes: Vec::new(),
                         failed: false,
                     });
                     Ok(files.len() - 1)
@@ -304,41 +334,25 @@ fn apply_edits(
             f.skipped.push(i);
             continue;
         }
-        let positions: Vec<usize> = f
-            .content
-            .match_indices(e.old.as_str())
-            .map(|(p, _)| p)
-            .collect();
-        if positions.len() == e.count {
-            f.content = replace_at(&f.content, &positions, &e.old, &e.new, &mut f.marks);
-            f.applied.push(i);
-            continue;
+        match matcher::find(&f.content, e) {
+            Ok(spans) => {
+                if matches!(e.target, Target::Range { .. }) {
+                    f.notes.push(range_note(i, &f.content, &spans[0]));
+                }
+                f.content = splice(&f.content, &spans, &mut f.marks);
+                f.applied.push(i);
+            }
+            Err(mut m) => {
+                f.failed = true;
+                if !f.applied.is_empty() && matcher::find(&f.original, e).is_ok() {
+                    m.details.push(format!(
+                        "note: this edit matches the file as it was before {}; an earlier edit in this batch changed that text",
+                        edit_list(&f.applied)
+                    ));
+                }
+                report.error(format!("{}: {}", e.label(i), m.headline), m.details);
+            }
         }
-
-        f.failed = true;
-        let (headline, mut details) = if positions.is_empty() {
-            (
-                "\"old\" not found".to_string(),
-                diagnose::not_found(&f.content, &e.old),
-            )
-        } else {
-            (
-                format!(
-                    "expected {} match{}, found {}",
-                    e.count,
-                    if e.count == 1 { "" } else { "es" },
-                    positions.len()
-                ),
-                diagnose::count_mismatch(&f.content, &positions, e.count),
-            )
-        };
-        if !f.applied.is_empty() && f.original.matches(e.old.as_str()).count() == e.count {
-            details.push(format!(
-                "note: \"old\" matches the file as it was before {}; an earlier edit in this batch changed that text",
-                edit_list(&f.applied)
-            ));
-        }
-        report.error(format!("edits[{i}] {}: {headline}", e.file), details);
     }
 
     for f in files.iter() {
@@ -352,40 +366,58 @@ fn apply_edits(
     }
 }
 
-/// Replaces `old` at each of `positions` (non-overlapping, ascending) with `new`.
-/// Existing `marks` are moved to their new offsets, and the start of each inserted
-/// `new` is added as a mark.
-fn replace_at(
-    content: &str,
-    positions: &[usize],
-    old: &str,
-    new: &str,
-    marks: &mut Vec<usize>,
-) -> String {
-    let mut out = String::with_capacity(content.len() + positions.len() * new.len());
-    let mut new_positions = Vec::with_capacity(positions.len());
+/// "edits[0] replaced lines 2-4 (3 lines) with 1 line", so a range edit's extent is visible.
+fn range_note(i: usize, content: &str, span: &Span) -> String {
+    let idx = LineIndex::new(content);
+    let first = idx.line_of(span.start);
+    let last = idx.line_of(span.end.saturating_sub(1).max(span.start));
+    let range = if first == last {
+        format!("line {first}")
+    } else {
+        format!("lines {first}-{last}")
+    };
+    format!(
+        "edits[{i}] replaced {range} ({}) with {}",
+        plural(last + 1 - first, "line"),
+        plural(span.new.lines().count(), "line")
+    )
+}
+
+fn plural(n: usize, word: &str) -> String {
+    if n == 1 {
+        format!("{n} {word}")
+    } else {
+        format!("{n} {word}s")
+    }
+}
+
+/// Replaces each span (non-overlapping, ascending). Existing `marks` are moved to their
+/// new offsets, and the start of each inserted text is added as a mark.
+fn splice(content: &str, spans: &[Span], marks: &mut Vec<usize>) -> String {
+    let mut out = String::with_capacity(content.len());
+    let mut new_starts = Vec::with_capacity(spans.len());
     let mut last = 0;
-    for &p in positions {
-        out.push_str(&content[last..p]);
-        new_positions.push(out.len());
-        out.push_str(new);
-        last = p + old.len();
+    for s in spans {
+        out.push_str(&content[last..s.start]);
+        new_starts.push(out.len());
+        out.push_str(&s.new);
+        last = s.end;
     }
     out.push_str(&content[last..]);
 
     for m in marks.iter_mut() {
-        let k = positions.partition_point(|&p| p <= *m);
+        let k = spans.partition_point(|s| s.start <= *m);
         if k == 0 {
             continue;
         }
-        let (p, np) = (positions[k - 1], new_positions[k - 1]);
-        *m = if *m < p + old.len() {
-            np
+        let (s, ns) = (&spans[k - 1], new_starts[k - 1]);
+        *m = if *m < s.end {
+            ns
         } else {
-            *m - (p + old.len()) + np + new.len()
+            *m - s.end + ns + s.new.len()
         };
     }
-    marks.extend(new_positions);
+    marks.extend(new_starts);
     out
 }
 
@@ -400,15 +432,23 @@ fn edit_list(ids: &[usize]) -> String {
 mod tests {
     use super::*;
 
+    fn span(start: usize, end: usize, new: &str) -> Span {
+        Span {
+            start,
+            end,
+            new: new.into(),
+        }
+    }
+
     #[test]
     fn marks_follow_later_edits() {
         let mut marks = vec![];
-        let s = replace_at("aXbXc", &[1, 3], "X", "YY", &mut marks);
+        let s = splice("aXbXc", &[span(1, 2, "YY"), span(3, 4, "YY")], &mut marks);
         assert_eq!(s, "aYYbYYc");
         assert_eq!(marks, vec![1, 4]);
         // Replace "b" (offset 3) with nothing: the mark after it shifts left by one,
         // and a mark is added where "b" was.
-        let s = replace_at(&s, &[3], "b", "", &mut marks);
+        let s = splice(&s, &[span(3, 4, "")], &mut marks);
         assert_eq!(s, "aYYYYc");
         assert_eq!(marks, vec![1, 3, 3]);
     }
@@ -416,7 +456,7 @@ mod tests {
     #[test]
     fn mark_inside_a_replaced_region_moves_to_its_start() {
         let mut marks = vec![2];
-        let s = replace_at("abcdef", &[1], "bcd", "Z", &mut marks);
+        let s = splice("abcdef", &[span(1, 4, "Z")], &mut marks);
         assert_eq!(s, "aZef");
         assert_eq!(marks, vec![1, 1]);
     }

@@ -450,3 +450,304 @@ fn unknown_flag_is_exit_2() {
     let dir = setup(&[]);
     rpatch(dir.path(), &["--frobnicate"], &json!({"edits": []})).code(2);
 }
+
+#[test]
+fn old_equal_to_new_is_exit_2() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "old": "a", "new": "a"}]}),
+    )
+    .code(2)
+    .stderr(predicate::str::contains("identical"));
+}
+
+// --- JSON の構文エラーのヒント -------------------------------------------------
+
+#[test]
+fn json_hint_for_backslash_quote() {
+    let dir = setup(&[]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        r#"{"edits":[{"file":"a.js","old":"say('it\'s')","new":"x"}]}"#,
+    )
+    .code(2)
+    .stderr(predicate::str::contains(r#""old":"say('it\'s')""#))
+    .stderr(predicate::str::contains(r"write ' as is"));
+}
+
+#[test]
+fn json_hint_for_raw_newline() {
+    let dir = setup(&[]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "{\"edits\":[{\"file\":\"a.js\",\"old\":\"a\nb\",\"new\":\"x\"}]}",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(r"\n"))
+    .stderr(predicate::str::contains("block format"));
+}
+
+// --- 区切り形式 ---------------------------------------------------------------
+
+fn rpatch_raw(dir: &Path, args: &[&str], input: &str) -> Assert {
+    assert_cmd::cargo_bin_cmd!("rpatch")
+        .current_dir(dir)
+        .args(args)
+        .write_stdin(input.to_string())
+        .assert()
+}
+
+#[test]
+fn block_replaces_lines_without_escaping() {
+    let original = r#"function help(svc, cmd) {
+  const key = `${svc} ${cmd}`;
+  return KEYS[key] ?? "it's \"none\"";
+}
+"#;
+    let dir = setup(&[("app.mjs", original)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        r#"=== app.mjs
+<<<<<<< OLD
+function help(svc, cmd) {
+  const key = `${svc} ${cmd}`;
+=======
+function help(svc, cmd, sub) {
+  const key = sub ? `${svc} ${cmd} ${sub}` : `${svc} ${cmd}`;
+>>>>>>> NEW
+"#,
+    )
+    .success()
+    .stdout("M app.mjs  edits=1  lines=1\n");
+    assert_eq!(
+        read(&dir, "app.mjs"),
+        r#"function help(svc, cmd, sub) {
+  const key = sub ? `${svc} ${cmd} ${sub}` : `${svc} ${cmd}`;
+  return KEYS[key] ?? "it's \"none\"";
+}
+"#
+    );
+}
+
+#[test]
+fn block_multiple_files_and_count() {
+    let dir = setup(&[("a.txt", "x\ny\nx\n"), ("b.txt", "1\n2\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD count=2\nx\n=======\nX\n>>>>>>> NEW\n\n\
+         === b.txt\n<<<<<<< OLD\n1\n=======\none\n>>>>>>> NEW\n<<<<<<< OLD\n2\n=======\ntwo\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout("M a.txt  edits=1  lines=1,3\nM b.txt  edits=2  lines=1,2\n");
+    assert_eq!(read(&dir, "a.txt"), "X\ny\nX\n");
+    assert_eq!(read(&dir, "b.txt"), "one\ntwo\n");
+}
+
+/// 行の途中に一致させると、残った行頭の空白がインデントを崩す。だから行の先頭からしか照合しない。
+#[test]
+fn block_matches_only_whole_lines() {
+    let original = "fn f() {\n    foo();\n}\n";
+    let dir = setup(&[("f.rs", original)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== f.rs\n<<<<<<< OLD\n  foo();\n=======\n  bar();\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("not at the start of a line"))
+    .stderr(predicate::str::contains("2 |     foo();"));
+    assert_eq!(read(&dir, "f.rs"), original);
+}
+
+#[test]
+fn block_with_empty_new_deletes_lines() {
+    let dir = setup(&[("a.txt", "keep\ndrop1\ndrop2\nkeep\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\ndrop1\ndrop2\n=======\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "keep\nkeep\n");
+}
+
+#[test]
+fn block_matches_last_line_without_newline() {
+    let dir = setup(&[("a.txt", "a\nb")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\nb\n=======\nc\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "a\nc");
+}
+
+#[test]
+fn block_follows_crlf_files() {
+    let dir = setup(&[("a.txt", "one\r\ntwo\r\nthree\r\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\none\ntwo\n=======\n1\n2\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "1\r\n2\r\nthree\r\n");
+}
+
+#[test]
+fn block_unterminated_is_exit_2() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(dir.path(), &[], "=== a.txt\n<<<<<<< OLD\na\n=======\nb\n")
+        .code(2)
+        .stderr(predicate::str::contains("line 2"))
+        .stderr(predicate::str::contains(">>>>>>> NEW"));
+}
+
+#[test]
+fn block_without_file_header_is_exit_2() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(dir.path(), &[], "<<<<<<< OLD\na\n=======\nb\n>>>>>>> NEW\n")
+        .code(2)
+        .stderr(predicate::str::contains("=== <file>"));
+}
+
+#[test]
+fn block_stray_text_is_exit_2() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(dir.path(), &[], "=== a.txt\nhello\n")
+        .code(2)
+        .stderr(predicate::str::contains("line 2"));
+}
+
+#[test]
+fn block_old_equal_to_new_is_exit_2() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\na\n=======\na\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("identical"));
+}
+
+// --- アンカー間の範囲置換 -----------------------------------------------------
+
+const SECTIONS: &str = "<h1>t</h1>\n<section id=\"a\">\n  <p>a</p>\n</section>\n<section id=\"b\">\n  <p>b</p>\n</section>\n";
+
+#[test]
+fn range_replaces_from_anchor_up_to_but_not_including_to() {
+    let dir = setup(&[("i.html", SECTIONS)]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{
+            "file": "i.html",
+            "from": "<section id=\"a\">",
+            "to": "<section id=\"b\">",
+            "new": "<section id=\"a\">A</section>\n",
+        }]}),
+    )
+    .success()
+    .stdout(predicate::str::contains("M i.html  edits=1  lines=2\n"))
+    .stdout(predicate::str::contains(
+        "edits[0] replaced lines 2-4 (3 lines) with 1 line",
+    ));
+    assert_eq!(
+        read(&dir, "i.html"),
+        "<h1>t</h1>\n<section id=\"a\">A</section>\n<section id=\"b\">\n  <p>b</p>\n</section>\n"
+    );
+}
+
+#[test]
+fn range_to_is_the_first_match_after_from() {
+    let dir = setup(&[("i.html", SECTIONS)]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{
+            "file": "i.html",
+            "from": "<section id=\"b\">",
+            "to": "</section>",
+            "new": "<section id=\"b\">B",
+        }]}),
+    )
+    .success();
+    assert_eq!(
+        read(&dir, "i.html"),
+        "<h1>t</h1>\n<section id=\"a\">\n  <p>a</p>\n</section>\n<section id=\"b\">B</section>\n"
+    );
+}
+
+#[test]
+fn range_from_must_be_unique() {
+    let dir = setup(&[("i.html", SECTIONS)]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "i.html", "from": "<section", "to": "</section>", "new": "x"}]}),
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "\"from\": expected 1 match, found 2",
+    ));
+}
+
+#[test]
+fn range_to_not_found_after_from() {
+    let dir = setup(&[("i.html", SECTIONS)]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "i.html", "from": "<section id=\"b\">", "to": "<h1>", "new": "x"}]}),
+    )
+    .code(1)
+    .stderr(predicate::str::contains("\"to\" not found after \"from\" (line 5)"))
+    .stderr(predicate::str::contains("only before"));
+    assert_eq!(read(&dir, "i.html"), SECTIONS);
+}
+
+#[test]
+fn range_in_block_format() {
+    let dir = setup(&[("i.html", SECTIONS)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== i.html\n<<<<<<< FROM\n<section id=\"a\">\n<<<<<<< TO\n<section id=\"b\">\n=======\n<section id=\"a\">A</section>\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(
+        read(&dir, "i.html"),
+        "<h1>t</h1>\n<section id=\"a\">A</section>\n<section id=\"b\">\n  <p>b</p>\n</section>\n"
+    );
+}
+
+#[test]
+fn range_rejects_count_and_old() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "from": "a", "to": "b", "new": "x", "count": 2}]}),
+    )
+    .code(2);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "old": "a", "from": "a", "to": "b", "new": "x"}]}),
+    )
+    .code(2);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "from": "a", "new": "x"}]}),
+    )
+    .code(2);
+}

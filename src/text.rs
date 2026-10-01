@@ -33,12 +33,18 @@ pub fn gutter(label: impl std::fmt::Display, text: &str) -> String {
     format!("{label:>6} | {text}")
 }
 
-pub fn join_lines(lines: &[usize]) -> String {
-    lines
+/// "line 3" or "lines 1, 3".
+pub fn line_list(lines: &[usize]) -> String {
+    let list = lines
         .iter()
         .map(|l| l.to_string())
         .collect::<Vec<_>>()
-        .join(", ")
+        .join(", ");
+    if lines.len() == 1 {
+        format!("line {list}")
+    } else {
+        format!("lines {list}")
+    }
 }
 
 #[cfg(test)]
