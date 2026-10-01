@@ -29,8 +29,11 @@ jobs:
           targets: ${{ matrix.target }}
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo clippy --locked --all-targets --features mcp -- -D warnings
       - run: cargo test --locked
-      - run: cargo build --locked --release --target ${{ matrix.target }}
+      - run: cargo test --locked --features mcp
+      # The artifacts include MCP so they work with Codex and Claude Code as downloaded.
+      - run: cargo build --locked --release --features mcp --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: rpatch-${{ matrix.target }}

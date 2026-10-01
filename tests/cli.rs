@@ -1299,3 +1299,20 @@ fn hard_link_warning() {
         "warning: app.mjs had 2 hard links",
     ));
 }
+
+/// mcp feature なしのビルドでは `rpatch mcp` は使えない。stdin の編集として処理せず、終了コード 2 で知らせる。
+#[cfg(not(feature = "mcp"))]
+#[test]
+fn mcp_subcommand_without_the_feature_is_a_usage_error() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["mcp"],
+        "=== a.txt\n<<<<<<< OLD\na\n=======\nb\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stdout("")
+    .stderr(predicate::str::contains("built without MCP support"))
+    .stderr(predicate::str::contains("--features mcp"));
+    assert_eq!(read(&dir, "a.txt"), "a\n");
+}

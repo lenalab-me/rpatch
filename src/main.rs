@@ -1,6 +1,8 @@
+#[cfg(feature = "mcp")]
 mod mcp;
 
 use std::io::{self, IsTerminal, Read};
+#[cfg(feature = "mcp")]
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -8,6 +10,7 @@ use rpatch::PatchOptions;
 
 const USAGE: &str = include_str!("help.txt");
 const SHORT_USAGE: &str = "usage: rpatch [--diff] [--dry-run] <<'EOF' ... EOF   (see `rpatch --help` for the input format)";
+#[cfg(feature = "mcp")]
 const MCP_USAGE: &str = "usage: rpatch mcp [--cwd <directory>]\nRuns a local MCP server over stdin/stdout. Relative edit paths use --cwd (default: current directory).";
 
 fn main() -> ExitCode {
@@ -74,6 +77,15 @@ fn parse_args(args: &[String]) -> Result<Option<PatchOptions>, u8> {
     Ok(Some(opts))
 }
 
+#[cfg(not(feature = "mcp"))]
+fn run_mcp(_args: &[String]) -> Result<(), u8> {
+    eprintln!(
+        "rpatch: this binary was built without MCP support; rebuild with `cargo install --locked --path . --features mcp`"
+    );
+    Err(2)
+}
+
+#[cfg(feature = "mcp")]
 fn run_mcp(args: &[String]) -> Result<(), u8> {
     let mut cwd = None;
     let mut args = args.iter();

@@ -2,6 +2,8 @@
 
 `rpatch mcp [--cwd <directory>]` でstdioのMCPサーバーを起動する。HTTP、認証、常駐サービスの設定は不要。クライアントが起動・終了させる。
 
+MCPはCargo feature `mcp`（既定ではオフ）に入っている。CLIだけ使うなら不要で、rmcpとtokioを含まないぶんバイナリが小さい。featureなしのビルドで `rpatch mcp` を実行すると、その旨のエラーを出して終了コード2で終わる。以下のビルド・インストールのコマンドには `--features mcp` を付けている。
+
 編集ツールは `rpatch` の1つ。既存CLIと同じ入力、照合、書き込み、差分・診断を使う。stdoutはMCP通信専用。起動エラーはstderrに出る。
 
 ## ビルド
@@ -11,7 +13,7 @@
 Mac:
 
 ```sh
-cargo build --locked --release
+cargo build --locked --release --features mcp
 ./target/release/rpatch --version
 ./target/release/rpatch mcp --help
 ```
@@ -19,19 +21,19 @@ cargo build --locked --release
 Windows（PowerShell）:
 
 ```powershell
-cargo build --locked --release
+cargo build --locked --release --features mcp
 .\target\release\rpatch.exe --version
 .\target\release\rpatch.exe mcp --help
 ```
 
-ソースからPATHに入れる場合は、どちらも `cargo install --locked --path .`。接続設定のcommandには、PATHへの依存を避けるため実行ファイルの絶対パスを使う。
+ソースからPATHに入れる場合は、どちらも `cargo install --locked --path . --features mcp`。接続設定のcommandには、PATHへの依存を避けるため実行ファイルの絶対パスを使う。
 
-[Build and test](../.github/workflows/build.yml)はApple Silicon、Intel Mac、Windows x64のホストでCLI／MCPテストとreleaseビルドを実行し、バイナリをActionsのartifactとして保存する。署名・notarizationやGitHub Releaseへの公開は含まない。
+[Build and test](../.github/workflows/build.yml)はApple Silicon、Intel Mac、Windows x64のホストで、featureなし・ありの両方のclippyとテストを実行する。releaseビルドは `--features mcp` 付きで、バイナリをActionsのartifactとして保存する。署名・notarizationやGitHub Releaseへの公開は含まない。
 
 ## Codexから接続
 
 ```sh
-cargo install --locked --path .
+cargo install --locked --path . --features mcp
 codex mcp add rpatch -- /Users/you/.cargo/bin/rpatch mcp
 codex mcp get rpatch --json
 ```
@@ -39,7 +41,7 @@ codex mcp get rpatch --json
 Windows（PowerShell）:
 
 ```powershell
-cargo install --locked --path .
+cargo install --locked --path . --features mcp
 codex mcp add rpatch -- 'C:\Users\you\.cargo\bin\rpatch.exe' mcp
 codex mcp get rpatch --json
 ```

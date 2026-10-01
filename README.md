@@ -16,6 +16,8 @@ EOF_INPUT
 
 `--dry-run` で確認だけできる。JSONの部分文字列置換、FROM/TOの範囲置換、BEFORE/AFTERの行挿入にも対応。入力形式の詳細は `rpatch --help`。
 
+MCPサーバーはCargo feature `mcp`（既定ではオフ）に入っている。使うには `cargo install --locked --path . --features mcp` （ビルドなら `cargo build --locked --release --features mcp`）で入れる。
+
 ```sh
 rpatch mcp --cwd /absolute/path/to/project
 ```
