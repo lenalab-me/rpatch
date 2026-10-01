@@ -130,7 +130,71 @@ EOF
 - 連続編集は、Edit のあいだに Read/Grep/Glob しか挟まず、同じファイルを続けて編集したものを数えている。
 - 置換の失敗は少なく見えるが、確認のない置換（113 件）は、マッチしなくてもエラーにならないので数えられていない。導入後は、確認のない置換が減るぶん、失敗として見えるようになる可能性がある。
 
+## 次のセッションで再開すること（2026-10-01、Claude によるレビュー後）
+
+GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビューした。lib 化は編集処理を変えておらず、テスト 98 件・clippy・fmt は通る。レビューを受けて次の 2 つを済ませた。
+
+- MCP の結果から `structuredContent` を外し、テキストだけを返すようにした（`src/mcp.rs`、`tests/mcp.rs`、`docs/mcp.md`）。理由は 2 つ。同じ出力が `content` にも入っていて量が 2 倍になること。Codex は `structuredContent` があるとそちらをモデルに渡すはずなので（未確認）、diff が JSON の文字列として見えてしまうこと。成否は `isError` で伝わる。
+- `cargo install --locked --path .` で修正版を入れ直し、Claude Code に user scope で登録した（`claude mcp add --transport stdio --scope user rpatch -- ~/.cargo/bin/rpatch mcp`）。`--cwd` は付けていない。Claude Code はプロジェクトのディレクトリでサーバーを起動するので、相対パスはそこが基準になる。bench は `--strict-mcp-config` を使うので、この登録の影響を受けない。
+
+残っていること（上ほど優先）:
+
+1. ~~**新しいセッションで、Claude Code から `mcp__rpatch__rpatch` を実際に使えるか確かめる。**~~ 済み（下の「進み具合」を参照）。
+2. ~~**`bench/compare_metrics.py:78-80` の失敗判定。**~~ 済み。Codex で照合の失敗を起こして確かめ、`status` だけで判定するようにした（下の「進み具合」を参照）。
+3. **コミットを分ける。** 未コミットの変更がとても多い。lib 化（挙動は変えない）→ MCP サーバー → CI → bench と実験記録、の順に分けると追いやすい。`main` に直接積むか、ブランチを切るかも決める。
+4. **CI（`.github/workflows/build.yml`）はまだ一度も動かしていない。** Windows は手元で検証していない。Windows では `canonicalize` すると `--cwd` が `\\?\C:\...` の形になり、instructions や `cwd:` の表示にそのまま出る。動作は Rust の `PathBuf::push` の正規化でおそらく大丈夫。表示が気になるなら `dunce` を使う。
+5. **小さいもの**
+   - `docs/mcp.md` の「1つのサーバー内の編集要求は順番に処理する」は、届いた順とも読める。実際は同時に処理しないだけで、届いた順は守られない。同じ箇所への 2 件を同時に送ると、5 回中 4 回は後から送ったほうが先に適用された（片方は照合に失敗し、ファイルは壊れない）。「同時には処理しない」と書き直す。
+   - MCP では diff が既定で有効。当初の「成功時の出力は短く」という方針とは逆なので、このままでよいか決める。
+   - release バイナリは rmcp と tokio のぶん 4.0MB ある。CLI だけ使うなら不要なので、`mcp` を Cargo feature にする手もある。
+   - CLI がファイルを読む前に `current_dir()` を解決するようになった。cwd が削除されていると、入力が不正でも終了コードが 3 になる（以前は 2）。
+   - `src/help.txt` の「See docs/mcp.md」は、バイナリだけ持っている人には辿れない。
+   - `docs/mcp.md` の Codex での確認記録（2026-10-01 …）は使い方の説明ではないので、`docs/mcp-experiment.md` に移す。リンク先の `learn.chatgpt.com/docs/extend/mcp` が実在するかも確かめる。
+   - HANDOFF の冒頭（「このディレクトリはまだ空で…」）が古いままになっている。
+   - 絶対パスを編集すると、diff の見出しが `--- a//tmp/x.txt` と二重スラッシュになる（CLI も MCP も同じ）。
+
+## 次のセッションで再開すること（2026-10-01、再開後更新）
+
+- 新しいデスクトップアプリのセッションでは `mcp__rpatch__rpatch` が実際のツール一覧に現れた。MCP経由の一時ファイルへのdry-run、本適用、不一致診断も確認済み。設定画面のUnknown表示自体は確認していない。
+- ZDOTDIR固定後のCodex比較を実行済み。CLI 0.159.2／gpt-6.1-sol／rpatch 0.7.0、2課題×3試行×2条件の12実行がすべて正常終了・独立検証成功。有効ペア6件、CLI混入0件。
+- 自発的なrpatch使用はCLI条件6/6、MCP条件2/6。編集呼び出しはCLI条件rpatch 7回、MCP条件rpatch 2回＋apply_patch 5回。MCPの使用は文章編集の2・3回目で、設定変更は3回ともapply_patchだった。
+- 同じ隔離設定の別セッションでも、CLIが見つからないことと、明示指定したMCPのdry-run成功を確認した。これは自発的使用の集計には含めていない。
+- 結果は `docs/mcp-experiment.md` と `bench/results/codex-20261001-zdotdir.json`。生ログ・作業コピー・接続確認・要件確認は `bench/out/codex-compare-20261001-zdotdir/`。12課題のテスト成功、12課題コミット、全6コピーのREADME要件・clean状態も確認済み。
+- この結果は1モデル・2課題・3試行で、CLIの短い案内とMCPツール説明の提示差を含む。次に比較を広げるなら、提示情報を揃えた条件と別の編集課題を追加する。モデルを変える場合は別の実験として記録する。
+- Codex同梱のrgが `--version` でも停止し、検索がタイムアウトした実行があるため、今回の所要時間から速度を比較しない。時間を比較する前に検索ツールの停止を切り分ける。
+- 既存のソース・接続手順・実験スクリプトの未コミット変更はそのまま残した。この再開では結果JSONと記録を追加・更新した。比較と接続確認のプロセスは終了済み。
+
 ## 進み具合
+
+- 2026-10-01: `bench/compare_metrics.py` の Codex の MCP 失敗判定を直した。
+  - 修正版のバイナリで Codex（CLI 0.159.2／gpt-6.1-sol、`--ignore-user-config`、rpatch の MCP だけを渡す）に照合の失敗を 1 回起こした。ログは `status: "failed"`、`structured_content: null`、本文は CLI の stderr と同じ診断だった。`isError` だけで `failed` になる。修正前のバイナリの smoke ログでも失敗は `failed` だったので、これまでの集計結果は変わらない。
+  - そこで `structured_content.exit_code` を見るのをやめ、`status` と `error` だけで判定する。テストデータも実際の形に合わせた。集計テスト 5 件が通る。
+  - 1 回目の試行で、Codex は引数名を `input` ではなく `patch` にして呼んだ（`failed to deserialize parameters: unknown field 'patch'`）。プロンプトで `input` を指定すると正しく呼べた。ツール説明の書き出しで引数名が目立っていない可能性がある。1 回だけなので傾向かどうかは分からない。
+  - ログは `bench/out/codex-mcp-fail-20261001/`（`events-1-wrong-arg.jsonl` が 1 回目）。
+
+- 2026-10-01: Claude Code（CLI、Opus）の新しいセッションで `mcp__rpatch__rpatch` を確かめた。`claude mcp get rpatch` は Connected。一時ファイルへの dry-run、本適用、照合の失敗（`"old" not found` と一番似ている行、`rpatch: nothing written`、ツール結果はエラー扱い）の 3 つが期待どおりだった。相対パス（`Cargo.toml`）はプロジェクトのディレクトリを基準に解決された。この HANDOFF の更新も MCP で行った。
+
+- 2026-10-01: Claude Code（Opus）で 0.7.0 をレビューした。MCP の結果から `structuredContent` を外し（Sonnet が実装し、Opus が確認）、修正版を Claude Code に user scope で登録した。テスト 98 件・clippy・fmt が通る。残りは「次のセッションで再開すること（Claude によるレビュー後）」に書いた。
+
+- 2026-10-01: デスクトップアプリの新セッションでrpatch MCPを認識し、CodexのCLI／MCP比較を再開・完了した。
+  - MCPのdry-run、本適用、不一致診断に成功。同じ隔離設定での明示指定による接続確認も成功した。
+  - 2課題・各条件3回の12実行はすべて検証成功、有効ペア6件。CLIの自発的使用6/6、MCP 2/6。編集失敗・CLI混入は0件。
+  - `bench/results/codex-20261001-zdotdir.json` と `docs/mcp-experiment.md` に結果を保存。全6作業コピーのREADME要件、テスト成功、課題コミットも確認した。
+  - releaseビルド、集計テスト5件、比較スクリプトのshellcheckが通った。所要時間にはCodex同梱rgの停止の影響があるため、速度の比較には使わない。
+
+- 2026-10-01: Codex側の登録と接続確認を追加した。
+  - `cargo install --locked --path .` で手元のrpatchを0.7.0に更新し、`codex mcp add rpatch -- /Users/you/.cargo/bin/rpatch mcp` で登録済み。cwdは固定しない。
+  - 新しいCodexセッション（CLI 0.159.2／gpt-6.1-sol）から `mcp__rpatch__rpatch` のdry-run、本適用、不一致診断の3回を確認した。実際のsample.txtの変更も確認済み。既存のアプリセッションはMCP設定の再読込が必要。
+  - `bench/compare-codex.sh` とCodex JSONL集計を追加した。集計テスト5件とshellcheckが通った。
+  - 自発的な使用の試行は両条件ともCLIを使用し、独立検証に成功。ただしMCP条件にもCLIが見えていたので、排他的な比較から除外。集計の `cli_contamination` で検出し、次回用にZDOTDIRを固定した。生ログは `bench/out/codex-compare-20261001-fixed/`。
+
+- 2026-10-01: ローカルMCPを追加してv0.7.0にした。
+  - `rpatch mcp [--cwd <directory>]` でstdioサーバーを起動する。ツールは `rpatch` の1つで、引数は `input`、`diff`（既定true）、`dry_run`（既定false）。
+  - 編集処理を `src/lib.rs` に移し、CLIとMCPで共有した。差分・診断はCLIと同じ文面。MCPの結果には `isError` と `structuredContent` の終了コード・stdout・stderrを付ける。
+  - サーバー内の編集要求を直列化し、キャンセル後も実行中の編集が終わるまで次を待たせる。cwdは明示的に渡し、プロセス全体の作業ディレクトリは変えない。
+  - Rustのテスト98件（既存90＋MCP接続8）、集計テスト3件、fmt／clippy／shellcheckが通った。Apple Siliconでreleaseビルド済み。Windows x64／Intel Mac／Apple Siliconのテストとビルドを `.github/workflows/build.yml` に追加したが、CI自体は未実行。
+  - ビルド・接続は `docs/mcp.md`。比較実験は `bench/compare.sh` と `docs/mcp-experiment.md`。既存の普段使いの指示を除き、同じseed・課題で自由にツールを選ばせる。
+  - 短い比較試行ではClaude CodeからMCPへの接続成功を確認。ただし両条件ともセッション上限（429）で作業前に終了したので、有効な比較結果はまだない。生ログは `bench/out/compare-20261001-171214/`（gitignore対象）。
 
 - 2026-10-01: `git init` と `cargo init` を済ませ、v0 を実装した。テストは `tests/cli.rs`（28 件）と単体テスト 4 件で、Codex の 3 つの問題を含む。
   - 失敗時のヒントは、次の順で最初に当てはまったものを 1 つ出す（`src/diagnose.rs`）。CRLF の違い → 空白の違い（該当行を表示）→ どこまで一致してどこで食い違うか → 一番似ている行。

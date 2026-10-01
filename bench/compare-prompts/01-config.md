@@ -1,0 +1,1 @@
+このクライアントの接続先設定を `endpoint` から `apiBase` に改名してください。config.json、app.mjs、test.mjs、README.mdを合わせてください。requestOptionsが返す `url` と `timeout` のキーはそのままにしてください。古い `endpoint` だけが入っている設定も引き続き読めるようにし、両方ある場合は `apiBase` を優先してください。その互換性のテストも追加してください。終わったらテストを実行してコミットしてください。

@@ -1,0 +1,4 @@
+{
+  "endpoint": "https://example.test/api",
+  "timeoutMs": 1000
+}

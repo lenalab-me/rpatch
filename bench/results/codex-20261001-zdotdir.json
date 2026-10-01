@@ -1,0 +1,596 @@
+{
+  "date": "2026-10-01",
+  "raw_results": "bench/out/codex-compare-20261001-zdotdir",
+  "experiment": {
+    "engine": "codex",
+    "model": "gpt-6.1-sol",
+    "trials": 3,
+    "limit": 0,
+    "timeout_seconds": 180
+  },
+  "versions": {
+    "codex": "codex-cli 0.159.2",
+    "rpatch": "rpatch 0.7.0"
+  },
+  "source_sha256": [
+    {
+      "sha256": "3a938c43cc053392228d6cb012cd3e5ed030419d69dbd1f9d789a2b9454e3e96",
+      "file": "bench/compare.sh"
+    },
+    {
+      "sha256": "39f7c9c23e27d6fee22623fb7be22810a1c7383c7cc1632901d4731fbc24639e",
+      "file": "bench/compare-codex.sh"
+    },
+    {
+      "sha256": "97c96b96ef77b8e9c164a6986980051d2282b040621bb319304de16e406a5f85",
+      "file": "bench/codex_overrides.py"
+    },
+    {
+      "sha256": "2503b5d12194a7f0abb255b9b004547bb3c0ca04a971be8c394478d56bac14e2",
+      "file": "bench/compare_metrics.py"
+    },
+    {
+      "sha256": "714955cdf6a5f5806a76e00a7e87d02618960230a0393cb19f440a09f2719e72",
+      "file": "bench/verify-sample.mjs"
+    },
+    {
+      "sha256": "8c602be536eed4ecf9adde700f5238c25627041388fb08d782c377fa56a69f95",
+      "file": "bench/compare-prompts/01-config.md"
+    },
+    {
+      "sha256": "d61010ae4f8732a96ed5ec81980108649cd68787d475f953bfcee81a4eb1a810",
+      "file": "bench/compare-prompts/02-docs.md"
+    },
+    {
+      "sha256": "2da6e50dffc23548780f34e0f2f092ab05e01eda9640f9caf5831fd6390b767d",
+      "file": "target/release/rpatch"
+    }
+  ],
+  "controls": {
+    "desktop_session": {
+      "tool_visible": true,
+      "dry_run_exit_code": 0,
+      "apply_exit_code": 0,
+      "mismatch_exit_code": 1,
+      "file_unchanged_after_dry_run_and_mismatch": true
+    },
+    "isolated_codex_session": {
+      "cli_lookup_exit_code": 1,
+      "mcp_dry_run_exit_code": 0,
+      "file_unchanged": true,
+      "trace": "mcp-control/trace.jsonl",
+      "explicit_tool_instruction": true,
+      "excluded_from_adoption_counts": true
+    }
+  },
+  "limitations": [
+    "Three trials on two sequential tasks with one model; tasks within each trial are not independent.",
+    "CLI instructions and MCP tool descriptions differ; this includes presentation effects.",
+    "Codex bundled rg timed out even for --version; elapsed time is not a protocol speed comparison.",
+    "Shell editing classification is heuristic; raw traces were checked."
+  ],
+  "summary": {
+    "rows": [
+      {
+        "trial": "trial-1",
+        "arm": "cli",
+        "prompt": "01-config",
+        "tool_calls": 5,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli": 2
+        },
+        "editing_calls": 2,
+        "rpatch_editing_calls": 2,
+        "rpatch_share": 1.0,
+        "autonomous_rpatch_use": true,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 102144,
+          "cached_input_tokens": 82816,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1369,
+          "reasoning_output_tokens": 58
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": false,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 78,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-1",
+        "arm": "cli",
+        "prompt": "02-docs",
+        "tool_calls": 4,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 1,
+        "rpatch_share": 1.0,
+        "autonomous_rpatch_use": true,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 111049,
+          "cached_input_tokens": 91776,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1041,
+          "reasoning_output_tokens": 14
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": false,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 70,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-1",
+        "arm": "mcp",
+        "prompt": "01-config",
+        "tool_calls": 8,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli_discovery_failed": 1,
+          "native_edit": 2
+        },
+        "editing_calls": 2,
+        "rpatch_editing_calls": 0,
+        "rpatch_share": 0.0,
+        "autonomous_rpatch_use": false,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 197272,
+          "cached_input_tokens": 155904,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1544,
+          "reasoning_output_tokens": 52
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": true,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 109,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-1",
+        "arm": "mcp",
+        "prompt": "02-docs",
+        "tool_calls": 7,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli_discovery_failed": 1,
+          "native_edit": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 0,
+        "rpatch_share": 0.0,
+        "autonomous_rpatch_use": false,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 99229,
+          "cached_input_tokens": 82560,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1231,
+          "reasoning_output_tokens": 6
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": true,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 71,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-2",
+        "arm": "cli",
+        "prompt": "01-config",
+        "tool_calls": 4,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 1,
+        "rpatch_share": 1.0,
+        "autonomous_rpatch_use": true,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 80801,
+          "cached_input_tokens": 62464,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 981,
+          "reasoning_output_tokens": 42
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": false,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 84,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-2",
+        "arm": "cli",
+        "prompt": "02-docs",
+        "tool_calls": 4,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 1,
+        "rpatch_share": 1.0,
+        "autonomous_rpatch_use": true,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 80475,
+          "cached_input_tokens": 61952,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 977,
+          "reasoning_output_tokens": 0
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": false,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 55,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-2",
+        "arm": "mcp",
+        "prompt": "01-config",
+        "tool_calls": 6,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli_discovery_failed": 1,
+          "native_edit": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 0,
+        "rpatch_share": 0.0,
+        "autonomous_rpatch_use": false,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 117596,
+          "cached_input_tokens": 81664,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1418,
+          "reasoning_output_tokens": 36
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": true,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 95,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-2",
+        "arm": "mcp",
+        "prompt": "02-docs",
+        "tool_calls": 6,
+        "counts": {
+          "rpatch_mcp": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 1,
+        "rpatch_share": 1.0,
+        "autonomous_rpatch_use": true,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 118418,
+          "cached_input_tokens": 97664,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1218,
+          "reasoning_output_tokens": 14
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": true,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 76,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-3",
+        "arm": "cli",
+        "prompt": "01-config",
+        "tool_calls": 4,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 1,
+        "rpatch_share": 1.0,
+        "autonomous_rpatch_use": true,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 82348,
+          "cached_input_tokens": 64000,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 989,
+          "reasoning_output_tokens": 16
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": false,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 72,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-3",
+        "arm": "cli",
+        "prompt": "02-docs",
+        "tool_calls": 5,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 1,
+        "rpatch_share": 1.0,
+        "autonomous_rpatch_use": true,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 157128,
+          "cached_input_tokens": 115840,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1254,
+          "reasoning_output_tokens": 13
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": false,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 108,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-3",
+        "arm": "mcp",
+        "prompt": "01-config",
+        "tool_calls": 10,
+        "counts": {
+          "rpatch_cli_discovery": 1,
+          "rpatch_cli_discovery_failed": 1,
+          "native_edit": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 0,
+        "rpatch_share": 0.0,
+        "autonomous_rpatch_use": false,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 213328,
+          "cached_input_tokens": 169088,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1579,
+          "reasoning_output_tokens": 98
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": true,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 127,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      },
+      {
+        "trial": "trial-3",
+        "arm": "mcp",
+        "prompt": "02-docs",
+        "tool_calls": 5,
+        "counts": {
+          "rpatch_mcp": 1
+        },
+        "editing_calls": 1,
+        "rpatch_editing_calls": 1,
+        "rpatch_share": 1.0,
+        "autonomous_rpatch_use": true,
+        "complete": true,
+        "cost_usd": null,
+        "num_turns": null,
+        "result_subtype": "success",
+        "terminal_reason": null,
+        "api_error_status": null,
+        "usage": {
+          "input_tokens": 222670,
+          "cached_input_tokens": 209408,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1401,
+          "reasoning_output_tokens": 40
+        },
+        "mcp_servers": [],
+        "mcp_server_errors": [],
+        "parse_errors": 0,
+        "engine": "codex",
+        "required_mcp": true,
+        "runner_exit_code": 0,
+        "elapsed_seconds": 104,
+        "verify_exit_code": 0,
+        "eligible": true,
+        "cli_contamination": false
+      }
+    ],
+    "paired_comparison": {
+      "cli": {
+        "paired_eligible_runs": 6,
+        "runs_with_rpatch_use": 6,
+        "editing_calls": 7,
+        "rpatch_editing_calls": 7,
+        "rpatch_share": 1.0
+      },
+      "mcp": {
+        "paired_eligible_runs": 6,
+        "runs_with_rpatch_use": 2,
+        "editing_calls": 7,
+        "rpatch_editing_calls": 2,
+        "rpatch_share": 0.2857
+      }
+    }
+  },
+  "audit": {
+    "rows": [
+      {
+        "trial": 1,
+        "arm": "cli",
+        "faq_questions": 3,
+        "overview_and_precedence": true,
+        "successful_test_executions": 2,
+        "task_commits": 2,
+        "clean": true
+      },
+      {
+        "trial": 1,
+        "arm": "mcp",
+        "faq_questions": 3,
+        "overview_and_precedence": true,
+        "successful_test_executions": 2,
+        "task_commits": 2,
+        "clean": true
+      },
+      {
+        "trial": 2,
+        "arm": "cli",
+        "faq_questions": 3,
+        "overview_and_precedence": true,
+        "successful_test_executions": 2,
+        "task_commits": 2,
+        "clean": true
+      },
+      {
+        "trial": 2,
+        "arm": "mcp",
+        "faq_questions": 3,
+        "overview_and_precedence": true,
+        "successful_test_executions": 2,
+        "task_commits": 2,
+        "clean": true
+      },
+      {
+        "trial": 3,
+        "arm": "cli",
+        "faq_questions": 3,
+        "overview_and_precedence": true,
+        "successful_test_executions": 2,
+        "task_commits": 2,
+        "clean": true
+      },
+      {
+        "trial": 3,
+        "arm": "mcp",
+        "faq_questions": 3,
+        "overview_and_precedence": true,
+        "successful_test_executions": 2,
+        "task_commits": 2,
+        "clean": true
+      }
+    ]
+  }
+}

@@ -1,3 +1,4 @@
 /target
+__pycache__/
 calls.jsonl
 bench/out/
