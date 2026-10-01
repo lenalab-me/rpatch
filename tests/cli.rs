@@ -236,6 +236,38 @@ fn diff_flag_prints_unified_diff() {
     .stdout(predicate::str::contains("-world\n+there\n"));
 }
 
+/// 絶対パスでは diff の見出しに a/ b/ を付けない（`a//tmp/x` にしない）。
+#[test]
+fn diff_header_keeps_absolute_paths_as_is() {
+    let dir = setup(&[("a.txt", "hello\n")]);
+    let path = dir.path().join("a.txt").display().to_string();
+    rpatch(
+        dir.path(),
+        &["--diff"],
+        &json!({"edits": [{"file": path, "old": "hello", "new": "there"}]}),
+    )
+    .success()
+    .stdout(predicate::str::contains(format!(
+        "--- {path}\n+++ {path}\n"
+    )));
+}
+
+/// cwd が削除されていても、入力の誤りは終了コード 2 のまま。
+#[cfg(unix)]
+#[test]
+fn deleted_cwd_still_reports_invalid_input() {
+    let dir = setup(&[]);
+    let gone = dir.path().join("gone");
+    fs::create_dir(&gone).unwrap();
+    assert_cmd::Command::new("sh")
+        .args(["-c", r#"cd "$1" && rmdir "$1" && exec "$2""#, "sh"])
+        .arg(&gone)
+        .arg(assert_cmd::cargo::cargo_bin!("rpatch"))
+        .write_stdin("not valid input")
+        .assert()
+        .code(2);
+}
+
 #[cfg(unix)]
 #[test]
 fn permissions_are_preserved() {

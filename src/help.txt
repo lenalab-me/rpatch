@@ -11,7 +11,7 @@ EOF
 
 MCP mode (only in a build with `--features mcp`): rpatch mcp [--cwd <directory>]
   Start a local MCP server over stdin/stdout with one editing tool, rpatch.
-  The tool takes `input` (the text you would give stdin), `diff` (default true)
+  The tool takes `input` (the text you would give stdin), `diff` (default false)
   and `dry_run`. Relative paths use --cwd (default: current directory).
 
 Block format (stdin not starting with `{`):

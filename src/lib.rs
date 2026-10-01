@@ -170,12 +170,13 @@ pub fn apply(text: &str, opts: PatchOptions, cwd: &Path) -> Result<String, Patch
     if opts.diff {
         for f in &files {
             let diff = TextDiff::from_lines(&f.original, &f.content);
-            let _ = write!(
-                out,
-                "{}",
-                diff.unified_diff()
-                    .header(&format!("a/{}", f.display), &format!("b/{}", f.display))
-            );
+            // An absolute path keeps its own form; `a//tmp/x` would only add noise.
+            let (old, new) = if Path::new(&f.display).is_absolute() {
+                (f.display.clone(), f.display.clone())
+            } else {
+                (format!("a/{}", f.display), format!("b/{}", f.display))
+            };
+            let _ = write!(out, "{}", diff.unified_diff().header(&old, &new));
         }
     }
     if opts.dry_run {

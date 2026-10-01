@@ -116,6 +116,15 @@ v0.7.0、Claude Code 2.1.286、claude-sonnet-5-5で、1課題・各条件1回を
 
 ローカルの生ログは `bench/out/compare-20261001-171214/`。このディレクトリはgitignore対象であり、配布物には含めない。
 
+## 接続確認（2026-10-01）
+
+自発的な使用の比較とは別に、ツールを指定して接続を確かめた記録。
+
+- Codex CLI 0.159.2／gpt-6.1-solで新しいセッションを起動し、`mcp__rpatch__rpatch` のdry-run、本適用、不一致診断の3呼び出しを確認した。作業ディレクトリの `sample.txt` は `alpha` → `ALPHA` に変わり、不一致では追加の書き込みはなかった。
+- 再開したデスクトップアプリの開発セッションでも `mcp__rpatch__rpatch` が実際のツール一覧に現れた。一時ファイルへのdry-run、本適用、不一致診断が成功し、dry-runと不一致では内容が変わらないことを確認した。MCP設定画面の表示自体はこの確認の対象にしていない。
+- Claude Code（CLI、Opus）の新しいセッションで、user scopeに登録したサーバーからdry-run、本適用、不一致診断を確認した。相対パスはプロジェクトのディレクトリが基準になった。
+- `structuredContent` を外したあとのバイナリで、Codexに照合の失敗を1回起こした。ログは `status: "failed"`、`structured_content: null` で、本文はCLIのstderrと同じ診断だった。1回目の試行では、Codexが引数名を `input` ではなく `patch` にして呼び、引数エラーになった。ログは `bench/out/codex-mcp-fail-20261001/`。
+
 ## 既存の課題を使う
 
 `bench/prompts/00-build.md` で作ったtasklogなど、任意の初期プロジェクトも渡せる。課題ディレクトリには同じ開始状態から順に成立する課題だけ置く。既存の `00-build.md` をそのまま編集課題に混ぜない。

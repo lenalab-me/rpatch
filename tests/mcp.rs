@@ -115,7 +115,7 @@ fn advertises_one_editing_tool_with_defaults_and_annotations() {
     let tool = &tools[0];
     assert_eq!(tool["name"], "rpatch");
     assert_eq!(tool["inputSchema"]["required"], json!(["input"]));
-    assert_eq!(tool["inputSchema"]["properties"]["diff"]["default"], true);
+    assert_eq!(tool["inputSchema"]["properties"]["diff"]["default"], false);
     assert_eq!(tool["annotations"]["readOnlyHint"], false);
     assert_eq!(tool["annotations"]["destructiveHint"], true);
 }
@@ -129,7 +129,7 @@ fn block_batch_writes_sequentially_and_returns_the_cli_diff() {
         fs::write(root.join("b.txt"), "world\n").unwrap();
     }
     let input = "=== a.txt\n<<<<<<< OLD\nhello\n=======\nHELLO\n>>>>>>> NEW\n<<<<<<< AFTER\nHELLO\n=======\n日本語 `${x}`\n>>>>>>> NEW\n=== b.txt\n<<<<<<< OLD\nworld\n=======\nWORLD\n>>>>>>> NEW\n";
-    let result = Session::start(dir.path()).apply(json!({"input": input}));
+    let result = Session::start(dir.path()).apply(json!({"input": input, "diff": true}));
     assert_eq!(result["isError"], false);
     assert!(result.get("structuredContent").is_none());
     assert_eq!(
@@ -179,7 +179,8 @@ fn mismatch_writes_nothing_and_diagnostics_equal_cli_then_server_recovers() {
         .unwrap();
     assert_eq!(text(&result), String::from_utf8(cli.stderr).unwrap());
     let fixed = json!({"edits":[{"file":"a.txt", "old":"hello", "new":"HELLO"}]}).to_string();
-    let result = session.apply(json!({"input": fixed, "diff": false}));
+    // diff is off by default, as in the CLI.
+    let result = session.apply(json!({"input": fixed}));
     assert_eq!(result["isError"], false);
     assert!(!text(&result).contains("--- a/"));
 }

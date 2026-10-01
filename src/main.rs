@@ -2,7 +2,6 @@
 mod mcp;
 
 use std::io::{self, IsTerminal, Read};
-#[cfg(feature = "mcp")]
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -38,10 +37,8 @@ fn run() -> Result<(), u8> {
         eprintln!("rpatch: cannot read stdin: {err}");
         2
     })?;
-    let cwd = std::env::current_dir().map_err(|err| {
-        eprintln!("rpatch: cannot resolve current directory: {err}");
-        3
-    })?;
+    // A deleted cwd must not hide input errors; relative paths then fail on their own.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     match rpatch::apply(&text, opts, &cwd) {
         Ok(out) => {
             print!("{out}");
