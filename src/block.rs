@@ -260,11 +260,18 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                 });
             } else if !line.trim().is_empty() {
                 let mut msg = format!(
-                    "line {n}: expected `=== <file>` or a block opener (`<<<<<<< OLD`, `FROM`, `BEFORE` or `AFTER`), found `{line}`"
+                    "line {n}: expected `=== <file>` or a block opener (`<<<<<<< OLD`, `OLD part`, `FROM`, `BEFORE` or `AFTER`), found `{line}`"
                 );
                 if line.starts_with(['<', '=', '>']) {
                     msg += "\n  hint: markers need at least 7 characters, e.g. `<<<<<<< OLD`";
+                } else if ["--- ", "+++ ", "@@ ", "*** "]
+                    .iter()
+                    .any(|p| line.starts_with(p))
+                {
+                    msg += "\n  hint: this is not a diff or patch format; write the old and the new text as they are";
                 }
+                // Guessed formats are the usual cause, so show the real one.
+                msg += "\n  the format is:\n    === path/to/file\n    <<<<<<< OLD\n    exact lines to replace\n    =======\n    replacement lines\n    >>>>>>> NEW\n  (`<<<<<<< OLD part` for part of a line; see `rpatch --help`)";
                 return Err(msg);
             }
             continue;

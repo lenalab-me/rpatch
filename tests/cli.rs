@@ -1559,3 +1559,23 @@ fn old_part_rejects_empty_and_identical() {
     )
     .code(2);
 }
+
+/// 自己流の diff 形式で書かれたら、diff ではないと伝え、正しい書き方の例を示す。
+#[test]
+fn guessed_diff_format_gets_the_real_format() {
+    let dir = setup(&[("a.html", "let x = 1;\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.html\n--- old\nlet x = 1;\n+++ new\nlet x = 2;\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("`OLD part`"))
+    .stderr(predicate::str::contains(
+        "this is not a diff or patch format",
+    ))
+    .stderr(predicate::str::contains(
+        "    <<<<<<< OLD\n    exact lines to replace\n    =======\n",
+    ));
+    assert_eq!(read(&dir, "a.html"), "let x = 1;\n");
+}
