@@ -168,6 +168,11 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 
 ## 進み具合
 
+- 2026-10-02: Claude Code と Codex から rpatch の MCP の登録を外し、手元は feature なし（CLI だけ）で入れ直した。
+  - きっかけ: 新しい beat-jam のセッション（5baaf50f）で、MCP の rpatch を初回に自己流の `--- old` / `+++ new` 形式で呼んで失敗した。CLI の `--help` を読んでから、2 回目で `OLD part` 3 つと `OLD` 2 つを 1 回で当てた（8 秒後）。CLI なら CLAUDE.md の案内で先に `--help` を読むが、MCP ではツール説明だけで書き方を推測してしまう。Codex でも引数名を `patch` と推測した例があった。
+  - `OLD part` 自体は、新しいセッションで最初の成功から狙いどおりに使われた（長い行の一部は `OLD part`、行全体は `OLD`）。
+  - 登録し直すときは `cargo install --locked --path . --features mcp` のあと `claude mcp add --transport stdio --scope user rpatch -- ~/.cargo/bin/rpatch mcp`、`codex mcp add rpatch -- ~/.cargo/bin/rpatch mcp`。
+
 - 2026-10-02: v0.8.0。#2 `<<<<<<< OLD part` を入れた（`count=N` も可）。中身は行のどこにでも一致し（JSON の `old` と同じ）、最後の改行は含めない。CRLF のファイルでは改行を合わせる。一致しない・複数に当たるときの扱いは OLD と同じで、count のヒントは `<<<<<<< OLD part count=N` で出す。
   - きっかけ: 指示なしの beat-jam のセッションの終盤（2026-10-01 16:24〜16:40 UTC）で、python での置換が 6 回戻った。どれも `assert s.count(a)==1` 付きの、rpatch と同じ種類の編集で、長い行（HTML のテンプレートリテラル）の一部を含んでいた。同じセッションで「行の一部だけ」の失敗を 3 回したあと、部分一致できる道具（`sd -F`、node、python）に流れていた。導入後の全セッションでは、rpatch の区切り形式 85 回に対して `sd -F` 28 回、rpatch の JSON 8 回、python 6 回、node 3 回。行の一部を書き換える編集は多いのに、rpatch では JSON（長い HTML/JS のエスケープが辛い）しかなかった。
   - 部分一致を断っていた理由（本人が行全体のつもりで省略したとき、行の残りが黙って残る）は、`part` と明示したときだけ部分一致にすることで避けた。「行の一部としてだけ見つかった」のヒントでも `OLD part` を案内する。
@@ -281,7 +286,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 
 ## 導入（2026-10-01 14:22 JST = 05:22 UTC）
 
-- `cargo install --path .` で `~/.cargo/bin/rpatch`（v0.3.1）に入れた。コードを変えたら、もう一度入れ直す。0.7.0 からは MCP が Cargo feature になったので、`cargo install --locked --path . --features mcp` で入れる（Claude Code と Codex に MCP として登録しているため）。featureなしだと `rpatch mcp` が使えなくなる。
+- `cargo install --path .` で `~/.cargo/bin/rpatch`（v0.3.1）に入れた。コードを変えたら、もう一度入れ直す。2026-10-02 からは MCP の登録を外したので、feature なしの `cargo install --locked --path .` で入れる（CLI だけ、0.8MB）。MCP を使い直すときは `--features mcp` で入れ直してから登録する。
 - `~/.claude/CLAUDE.md` の「CLI ツール」の節に、次の 1 行を足した（`sd` の行の次）。
   - 「複数行・複数箇所の置換: `rpatch`（stdin に区切り形式で渡す。書き方は `rpatch --help`）。python のヒアドキュメントで置換しない」
   - 2026-10-01 15:59 JST（06:59 UTC）に「置換」を「置換・挿入」に変えた（BEFORE/AFTER を入れたため）。導入後の集計で、この前後を分けて見るときの区切りにする。
