@@ -2,3 +2,6 @@
 __pycache__/
 calls.jsonl
 bench/out/
+# 集計・比較の結果は ~/project/prod/rpatch-notes/ に置く
+tools/log-analysis/*.json
+bench/results/

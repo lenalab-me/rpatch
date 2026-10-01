@@ -106,7 +106,7 @@ MCP条件では、設定変更は3回とも組み込みのapply_patchを選ん�
 
 この条件ではCLIの案内からrpatchが毎回選ばれ、MCPは文章編集で選ばれた。ただし1モデル・2課題・3試行で、同じ試行内の課題も独立ではない。案内の情報量や提示位置も異なるため、プロトコルの優劣には一般化しない。Codex同梱のrgはこの環境で `--version` でもタイムアウトし、検索が停止した実行がある。所要時間は保存したが、速度の優劣の根拠には使わない。
 
-集計・接続確認・要件確認は [保存した結果JSON](../bench/results/codex-20261001-zdotdir.json)。生ログ、開始ファイル、各課題のコミット、接続確認の `mcp-control/trace.jsonl`、確認用の `audit.mjs`／`audit.json` は `bench/out/codex-compare-20261001-zdotdir/` に保存した。スクリプト・課題・バイナリのSHA-256も記録している。
+集計・接続確認・要件確認は、保存した結果JSON（`~/project/prod/rpatch-notes/bench-results/codex-20261001-zdotdir.json`、リポジトリの外）。生ログ、開始ファイル、各課題のコミット、接続確認の `mcp-control/trace.jsonl`、確認用の `audit.mjs`／`audit.json` は `bench/out/codex-compare-20261001-zdotdir/` に保存した。スクリプト・課題・バイナリのSHA-256も記録している。
 
 ## 初回の接続試行（2026-10-01）
 

@@ -117,7 +117,7 @@ EOF
 
 ### ベースライン（導入前、2026-10-01 取得）
 
-`tools/log-analysis/baseline-2026-10-01.json`。期間は 2026-09-24〜2026-10-01T04:50（UTC）で、85 セッション、ツール呼び出しは 3,459 件。rpatch 自身の開発セッションは除いた。
+`~/project/prod/rpatch-notes/log-analysis/baseline-2026-10-01.json`（集計・比較の結果は repo の外に置く。2026-10-02 に移した）。期間は 2026-09-24〜2026-10-01T04:50（UTC）で、85 セッション、ツール呼び出しは 3,459 件。rpatch 自身の開発セッションは除いた。
 
 | 数値 | 値 |
 |---|---|
@@ -161,14 +161,14 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 - ZDOTDIR固定後のCodex比較を実行済み。CLI 0.159.2／gpt-6.1-sol／rpatch 0.7.0、2課題×3試行×2条件の12実行がすべて正常終了・独立検証成功。有効ペア6件、CLI混入0件。
 - 自発的なrpatch使用はCLI条件6/6、MCP条件2/6。編集呼び出しはCLI条件rpatch 7回、MCP条件rpatch 2回＋apply_patch 5回。MCPの使用は文章編集の2・3回目で、設定変更は3回ともapply_patchだった。
 - 同じ隔離設定の別セッションでも、CLIが見つからないことと、明示指定したMCPのdry-run成功を確認した。これは自発的使用の集計には含めていない。
-- 結果は `docs/mcp-experiment.md` と `bench/results/codex-20261001-zdotdir.json`。生ログ・作業コピー・接続確認・要件確認は `bench/out/codex-compare-20261001-zdotdir/`。12課題のテスト成功、12課題コミット、全6コピーのREADME要件・clean状態も確認済み。
+- 結果は `docs/mcp-experiment.md` と `~/project/prod/rpatch-notes/bench-results/codex-20261001-zdotdir.json`。生ログ・作業コピー・接続確認・要件確認は `bench/out/codex-compare-20261001-zdotdir/`。12課題のテスト成功、12課題コミット、全6コピーのREADME要件・clean状態も確認済み。
 - この結果は1モデル・2課題・3試行で、CLIの短い案内とMCPツール説明の提示差を含む。次に比較を広げるなら、提示情報を揃えた条件と別の編集課題を追加する。モデルを変える場合は別の実験として記録する。
 - Codex同梱のrgが `--version` でも停止し、検索がタイムアウトした実行があるため、今回の所要時間から速度を比較しない。時間を比較する前に検索ツールの停止を切り分ける。
 - 既存のソース・接続手順・実験スクリプトの未コミット変更はそのまま残した。この再開では結果JSONと記録を追加・更新した。比較と接続確認のプロセスは終了済み。
 
 ## 進み具合
 
-- 2026-10-02: 指示なしの beat-jam のセッションが 15:14 UTC まで続いたので、全体（11:48〜15:14 UTC、サブエージェント 3 つを含めて呼び出し 404 件）を測り直した。結果は `tools/log-analysis/after-2026-10-01-beatjam.json`。
+- 2026-10-02: 指示なしの beat-jam のセッションが 15:14 UTC まで続いたので、全体（11:48〜15:14 UTC、サブエージェント 3 つを含めて呼び出し 404 件）を測り直した。結果は `~/project/prod/rpatch-notes/log-analysis/after-2026-10-01-beatjam.json`。
   - python での置換 0、Edit 7、**rpatch での編集 19**、sd 11。python・Edit・rpatch の中で rpatch が 73%（ベースラインでは python が 75% だった）。
   - 前半（AWS CLI の操作）は Edit 6 と sd、後半（setup.sh、jam-preflight.sh、steps.html、runbook の md などの書き換え）は rpatch 19 と Edit 1。複数箇所や複数ブロックの編集になると rpatch を選んでいた。ブロックは OLD 26、FROM 3、BEFORE 2、AFTER 4。
   - 失敗は 3 回で、3 回とも「長い 1 行の一部だけを OLD に書く」。2 回は #14 で入れた「行の途中にある」、1 回は「行の先頭だけ」の診断。どれも 1 分以内に直った（Edit や `sd -F` の部分一致に切り替えたのが 2 回、rpatch で書き直したのが 1 回）。失敗した呼び出しでは何も書き込まれていない。
@@ -215,7 +215,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 - 2026-10-01: デスクトップアプリの新セッションでrpatch MCPを認識し、CodexのCLI／MCP比較を再開・完了した。
   - MCPのdry-run、本適用、不一致診断に成功。同じ隔離設定での明示指定による接続確認も成功した。
   - 2課題・各条件3回の12実行はすべて検証成功、有効ペア6件。CLIの自発的使用6/6、MCP 2/6。編集失敗・CLI混入は0件。
-  - `bench/results/codex-20261001-zdotdir.json` と `docs/mcp-experiment.md` に結果を保存。全6作業コピーのREADME要件、テスト成功、課題コミットも確認した。
+  - `~/project/prod/rpatch-notes/bench-results/codex-20261001-zdotdir.json`（当時は `bench/results/`）と `docs/mcp-experiment.md` に結果を保存。全6作業コピーのREADME要件、テスト成功、課題コミットも確認した。
   - releaseビルド、集計テスト5件、比較スクリプトのshellcheckが通った。所要時間にはCodex同梱rgの停止の影響があるため、速度の比較には使わない。
 
 - 2026-10-01: Codex側の登録と接続確認を追加した。
