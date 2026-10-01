@@ -17,6 +17,10 @@ MCP mode (only in a build with `--features mcp`): rpatch mcp [--cwd <directory>]
 Block format (stdin not starting with `{`):
   === <file>               switch to a file; any number of blocks may follow
   <<<<<<< OLD count=N      replace N matches instead of exactly 1
+  <<<<<<< OLD part         the OLD text may be any part of a line (and NEW replaces
+                           just that part); without its final line break, like JSON.
+                           Use it on purpose: plain OLD refuses part of a line so that
+                           an abbreviated line cannot leave its rest behind
   <<<<<<< FROM / <<<<<<< TO / ======= / >>>>>>> NEW
                            replace from the FROM lines up to, not including, the
                            first TO lines after them (FROM is replaced, TO is kept;
@@ -54,7 +58,7 @@ Rules:
 Tips:
   - Always quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
   - Chain follow-up commands with &&, so they do not run after a failed edit.
-  - To edit part of a long line, use JSON; to add lines next to one, use BEFORE/AFTER.
+  - To edit part of a long line, use OLD part; to add lines next to one, BEFORE/AFTER.
 
 Output:
   One line per file: `M <file>  edits=<n>  at_lines=3,10-12`. at_lines are the lines

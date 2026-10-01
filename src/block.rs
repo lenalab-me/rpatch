@@ -7,6 +7,11 @@
 //! =======
 //! replacement lines
 //! >>>>>>> NEW
+//! <<<<<<< OLD part       (text that may be any part of a line, without its line break)
+//! part of a line
+//! =======
+//! replacement text
+//! >>>>>>> NEW
 //! <<<<<<< FROM           (range: from these lines up to, not including, the TO lines)
 //! first lines of the range
 //! <<<<<<< TO
@@ -88,15 +93,19 @@ impl Part {
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Replace,
+    /// `OLD part`: the text may be any part of a line.
+    ReplacePart,
     Range,
-    Insert { after: bool },
+    Insert {
+        after: bool,
+    },
 }
 
 impl Kind {
     /// The name of the block's first part, as written in its opener.
     fn first_part(self) -> &'static str {
         match self {
-            Kind::Replace => "OLD",
+            Kind::Replace | Kind::ReplacePart => "OLD",
             Kind::Range => "FROM",
             Kind::Insert { after: false } => "BEFORE",
             Kind::Insert { after: true } => "AFTER",
@@ -126,6 +135,8 @@ fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Kind, usize), Str
     };
     let parsed = if rest == " FROM" {
         Some((Kind::Range, 1))
+    } else if let Some(c) = with_count(" OLD part") {
+        c.map(|c| (Kind::ReplacePart, c))
     } else if let Some(c) = with_count(" OLD") {
         c.map(|c| (Kind::Replace, c))
     } else if let Some(c) = with_count(" BEFORE") {
@@ -137,7 +148,7 @@ fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Kind, usize), Str
     };
     Some(parsed.map(|(kind, count)| (len, kind, count)).ok_or_else(|| {
         format!(
-            "line {n}: expected `{open} OLD`, `{open} FROM`, `{open} BEFORE` or `{open} AFTER` (OLD, BEFORE and AFTER may add ` count=N`), found `{line}`"
+            "line {n}: expected `{open} OLD`, `{open} OLD part`, `{open} FROM`, `{open} BEFORE` or `{open} AFTER` (all but FROM may add ` count=N`), found `{line}`"
         )
     }))
 }
@@ -276,9 +287,16 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                 ));
             }
             Part::New if line == m.close => {
-                let b = block.take().expect("inside a block");
+                let mut b = block.take().expect("inside a block");
+                let part = b.kind == Kind::ReplacePart;
+                if part {
+                    // Part of a line: the line break after the last line is not part of it.
+                    for text in [&mut b.first, &mut b.new] {
+                        text.pop();
+                    }
+                }
                 let target = match b.kind {
-                    Kind::Replace => Target::Text(b.first),
+                    Kind::Replace | Kind::ReplacePart => Target::Text(b.first),
                     Kind::Range => Target::Range {
                         from: b.first,
                         to: b.second,
@@ -294,6 +312,7 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                     new: b.new,
                     count: b.count,
                     lines: true,
+                    part,
                     source_line: Some(b.start),
                 });
             }

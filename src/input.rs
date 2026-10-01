@@ -20,6 +20,9 @@ pub struct Edit {
     /// Block format: texts are whole lines, matched only at line starts, and follow
     /// the file's line endings.
     pub lines: bool,
+    /// Block format `OLD part`: the text may be any part of a line (matched anywhere,
+    /// like JSON "old"), still following the file's line endings.
+    pub part: bool,
     /// Line in the input where the edit starts (block format only).
     pub source_line: Option<usize>,
 }
@@ -90,6 +93,7 @@ fn parse_json(text: &str) -> Result<Vec<Edit>, String> {
                 new: e.new,
                 count: e.count.unwrap_or(1),
                 lines: false,
+                part: false,
                 source_line: None,
             })
         })

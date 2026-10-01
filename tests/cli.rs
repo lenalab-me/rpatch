@@ -1453,3 +1453,109 @@ fn mcp_subcommand_without_the_feature_is_a_usage_error() {
     .stderr(predicate::str::contains("--features mcp"));
     assert_eq!(read(&dir, "a.txt"), "a\n");
 }
+
+// --- #2: OLD part（行の一部を書き換える） -------------------------------------
+
+/// 行の途中の文字列だけを書き換え、行の残りは残す。
+#[test]
+fn old_part_replaces_text_inside_a_line() {
+    let dir = setup(&[(
+        "a.sh",
+        "echo 練習のときだけ: JAM_MOCK_PROFILE=prod && run\nnext\n",
+    )]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.sh\n<<<<<<< OLD part\n練習のときだけ: JAM_MOCK_PROFILE=prod\n=======\n練習のときだけ: JAM_MOCK_LANG=ja JAM_MOCK_PROFILE=prod\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("at_lines=1"));
+    assert_eq!(
+        read(&dir, "a.sh"),
+        "echo 練習のときだけ: JAM_MOCK_LANG=ja JAM_MOCK_PROFILE=prod && run\nnext\n"
+    );
+}
+
+/// 複数行にまたがる部分（1 行目の末尾から 2 行目の先頭まで）も書ける。
+#[test]
+fn old_part_spans_lines() {
+    let dir = setup(&[(
+        "a.js",
+        "  }).join(\"\") + `\n    ${C ? `<div id=\"panel\">` : \"\"}\n",
+    )]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.js\n<<<<<<< OLD part\n.join(\"\") + `\n    ${C ? `<div id=\"panel\">\n=======\n.join(\"\") + `</div>\n    ${C ? `<div id=\"panel\" class=\"d\">\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(
+        read(&dir, "a.js"),
+        "  }).join(\"\") + `</div>\n    ${C ? `<div id=\"panel\" class=\"d\">` : \"\"}\n"
+    );
+}
+
+/// CRLF のファイルでも、OLD part の改行はファイルに合わせる。
+#[test]
+fn old_part_follows_crlf() {
+    let dir = setup(&[("a.txt", "one two\r\nthree four\r\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD part\ntwo\nthree\n=======\n2\n3\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "one 2\r\n3 four\r\n");
+}
+
+/// OLD part も、ちょうど count 回でなければ失敗にする。ヒントは OLD part の書き方で出す。
+#[test]
+fn old_part_count_hint_uses_old_part() {
+    let dir = setup(&[("a.txt", "x = 1; y = 1;\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD part\n= 1\n=======\n= 2\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("expected 1 match, found 2"))
+    .stderr(predicate::str::contains("<<<<<<< OLD part count=2"));
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD part count=2\n= 1\n=======\n= 2\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "x = 2; y = 2;\n");
+}
+
+/// 行の一部としてだけ見つかったときのヒントで、OLD part を案内する。
+#[test]
+fn partial_line_hint_suggests_old_part() {
+    let dir = setup(&[("a.txt", "aa Approval Gate bb\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\nApproval Gate\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("<<<<<<< OLD part"));
+}
+
+/// OLD part でも、空や NEW と同じものは入力の誤り。
+#[test]
+fn old_part_rejects_empty_and_identical() {
+    let dir = setup(&[("a.txt", "abc\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD part\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(2);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD part\nb\n=======\nb\n>>>>>>> NEW\n",
+    )
+    .code(2);
+}

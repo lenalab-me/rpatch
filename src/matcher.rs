@@ -26,7 +26,9 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
     match &edit.target {
         Target::Text(old) => {
             let old = adapt(old, crlf);
-            let mut spans: Vec<Span> = occurrences(content, &old, edit.lines)
+            // OLD part matches anywhere, like JSON; plain OLD only at line starts.
+            let whole_lines = edit.lines && !edit.part;
+            let mut spans: Vec<Span> = occurrences(content, &old, whole_lines)
                 .into_iter()
                 .map(|p| Span {
                     start: p,
@@ -34,7 +36,7 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                     new: new.to_string(),
                 })
                 .collect();
-            if edit.lines {
+            if whole_lines {
                 spans.extend(last_line_match(content, &old, &new, nl, spans.last()));
             }
             let positions: Vec<usize> = spans.iter().map(|s| s.start).collect();
@@ -46,9 +48,13 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                 positions: &positions,
                 overlap,
             };
-            Err(mismatch(
-                "old", content, &old, &found, edit.count, edit.lines,
-            ))
+            let mut err = mismatch("old", content, &old, &found, edit.count, edit.lines);
+            if edit.part {
+                for d in &mut err.details {
+                    *d = d.replace("<<<<<<< OLD count=", "<<<<<<< OLD part count=");
+                }
+            }
+            Err(err)
         }
         Target::Insert { anchor, after } => {
             let field = if *after { "after" } else { "before" };
@@ -407,7 +413,7 @@ fn partial_line(content: &str, needle: &str, start: usize, field: &str) -> Optio
         out.push(format!("(also found as part of {})", line_list(&others)));
     }
     out.push(if field == "old" {
-        "hint: copy the whole lines, including leading whitespace, or use JSON to match part of a line; to only add lines next to it, use BEFORE/AFTER, which accept part of a line".into()
+        "hint: copy the whole lines, including leading whitespace; to change only part of a line, open the block with `<<<<<<< OLD part`; to only add lines next to it, use BEFORE/AFTER, which accept part of a line".into()
     } else {
         format!("hint: {name} has to start at the start of a line, including leading whitespace (its last line may stop early)")
     });
