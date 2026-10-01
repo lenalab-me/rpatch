@@ -143,6 +143,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 2. ~~**`bench/compare_metrics.py:78-80` の失敗判定。**~~ 済み。Codex で照合の失敗を起こして確かめ、`status` だけで判定するようにした（下の「進み具合」を参照）。
 3. ~~**コミットを分ける。**~~ 済み（下の「進み具合」を参照）。`main` に直接積んだ。push はまだしていない。
 4. **CI（`.github/workflows/build.yml`）はまだ一度も動かしていない。** Windows は手元で検証していない。Windows では `canonicalize` すると `--cwd` が `\\?\C:\...` の形になり、instructions や `cwd:` の表示にそのまま出る。動作は Rust の `PathBuf::push` の正規化でおそらく大丈夫。表示が気になるなら `dunce` を使う。
+   - 2026-10-01: 手動起動（`workflow_dispatch`）だけにした。push では動かない。private リポジトリでは macOS のランナーが 10 倍、Windows が 2 倍の分数を消費するため。配布用のバイナリが要るときに `gh workflow run build.yml` で動かす。
 5. **小さいもの**
    - ~~`docs/mcp.md` の「1つのサーバー内の編集要求は順番に処理する」は、届いた順とも読める。~~ 済み。
    - ~~MCP では diff が既定で有効。~~ 済み。CLI に合わせて既定を無効にした。

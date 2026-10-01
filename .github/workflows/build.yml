@@ -1,7 +1,7 @@
 name: Build and test
+# Manual only: macOS and Windows runners use private-repo minutes at 10x and 2x.
+# Run with `gh workflow run build.yml` when release binaries are needed.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
