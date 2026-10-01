@@ -560,7 +560,7 @@ fn block_matches_only_whole_lines() {
         "=== f.rs\n<<<<<<< OLD\n  foo();\n=======\n  bar();\n>>>>>>> NEW\n",
     )
     .code(1)
-    .stderr(predicate::str::contains("not at the start of a line"))
+    .stderr(predicate::str::contains("only as part of a line"))
     .stderr(predicate::str::contains("2 |     foo();"));
     assert_eq!(read(&dir, "f.rs"), original);
 }
@@ -750,4 +750,122 @@ fn range_rejects_count_and_old() {
         &json!({"edits": [{"file": "a.txt", "from": "a", "new": "x"}]}),
     )
     .code(2);
+}
+
+// --- v0.2.0 の試用レビュー（docs/review-v0.2.0.md）への対応 ---------------------
+
+/// レビューの 3.: TO が見つからないとき、似た箇所は FROM より後ろから探し、ラベルは "to" にする。
+#[test]
+fn range_to_not_found_looks_after_from() {
+    let original = "<main>\n\n\n  <section id=\"a\">\n    <p>a</p>\n  </section>\n\n  <section id=\"b\">\n  </section>\n</main>\n";
+    let dir = setup(&[("i.html", original)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== i.html\n<<<<<<< FROM\n  <section id=\"a\">\n<<<<<<< TO\n  <section id=\"c\">\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("\"to\" not found after \"from\" (line 4)"))
+    .stderr(predicate::str::contains("to |   <section id=\"c\">"))
+    .stderr(predicate::str::contains("8 |   <section id=\"b\">"))
+    .stderr(predicate::str::contains("\"old\"").not());
+}
+
+/// レビューの 2.: 行の一部だけを書いたときは「空白違い」ではなく「行の一部」と言う。
+#[test]
+fn block_partial_line_is_reported_as_such() {
+    let original = "# memo\n\n**Why:** 仕様は「速さ」ではなく正確さ\n**How:** 試す\n";
+    let dir = setup(&[("m.md", original)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== m.md\n<<<<<<< FROM\n**Why:**\n<<<<<<< TO\n**How:**\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("\"from\" not found"))
+    .stderr(predicate::str::contains("only as part of a line"))
+    .stderr(predicate::str::contains("3 | **Why:**"))
+    .stderr(predicate::str::contains("use JSON"))
+    .stderr(predicate::str::contains("different whitespace").not());
+}
+
+/// レビューの 3. の改善案: 記号を長くすれば、7 個の記号の行を中身として書ける。
+#[test]
+fn longer_markers_allow_marker_lines_as_content() {
+    let dir = setup(&[("doc.md", "# doc\nexample here\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== doc.md\n<<<<<<<<< OLD\nexample here\n=========\n<<<<<<< OLD\nold\n=======\nnew\n>>>>>>> NEW\n>>>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(
+        read(&dir, "doc.md"),
+        "# doc\n<<<<<<< OLD\nold\n=======\nnew\n>>>>>>> NEW\n"
+    );
+}
+
+#[test]
+fn longer_markers_work_for_ranges() {
+    let dir = setup(&[("a.txt", "a\nb\nc\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<<< FROM\na\n<<<<<<<< TO\nc\n========\n=======\n>>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "=======\nc\n");
+}
+
+#[test]
+fn marker_line_in_content_suggests_longer_markers() {
+    let dir = setup(&[("doc.md", "x\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== doc.md\n<<<<<<< OLD\nx\n=======\nsee <<<<<<< FROM below\n<<<<<<< FROM\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("<<<<<<<<< OLD"))
+    .stderr(predicate::str::contains("JSON"));
+}
+
+/// レビューの 1. の細かい点: NEW の部分の開始行は `=======` の行。
+#[test]
+fn block_error_names_the_part_that_starts_at_the_separator() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\na\n=======\nb\n<<<<<<< OLD\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("NEW part that starts at line 4"))
+    .stderr(predicate::str::contains(
+        "missing `>>>>>>> NEW` before line 6?",
+    ));
+}
+
+#[test]
+fn block_hint_for_missing_separator() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\na\nb\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("missing `=======` before line 5?"));
+}
+
+#[test]
+fn block_hint_for_short_markers() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<< OLD\na\n=======\nb\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("at least 7"));
 }

@@ -59,7 +59,7 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                     end: after + q,
                     new: new.into_owned(),
                 }]),
-                None => Err(to_not_found(content, &to, start, edit.lines)),
+                None => Err(to_not_found(content, &to, start, after, edit.lines)),
             }
         }
     }
@@ -144,27 +144,30 @@ fn mismatch(
     }
 
     let headline = format!("\"{field}\" not found");
-    if lines {
-        let loose = occurrences(content, needle, false);
-        if !loose.is_empty() {
-            return Mismatch {
-                headline,
-                details: not_at_line_start(content, &loose),
-            };
-        }
-    }
-    Mismatch {
-        headline,
-        details: diagnose::not_found(content, needle),
-    }
+    let details = match lines.then(|| partial_line(content, needle, 0)).flatten() {
+        Some(details) => details,
+        None => diagnose::not_found(content, needle, field, 0),
+    };
+    Mismatch { headline, details }
 }
 
-fn not_at_line_start(content: &str, positions: &[usize]) -> Vec<String> {
+/// Block texts are whole lines. If the text is in `content[start..]` only as part of a
+/// line (leading whitespace left out, or only the start of a line written), say so.
+fn partial_line(content: &str, needle: &str, start: usize) -> Option<Vec<String>> {
+    let text = needle.strip_suffix('\n')?;
+    let text = text.strip_suffix('\r').unwrap_or(text);
+    if text.trim().is_empty() {
+        return None;
+    }
+    let loose = occurrences(&content[start..], text, false);
+    if loose.is_empty() {
+        return None;
+    }
     let idx = LineIndex::new(content);
-    let mut lines: Vec<usize> = positions.iter().map(|&p| idx.line_of(p)).collect();
+    let mut lines: Vec<usize> = loose.iter().map(|&p| idx.line_of(start + p)).collect();
     lines.dedup();
     let mut out = vec![format!(
-        "found, but not at the start of a line (the block format matches whole lines), at {}:",
+        "found only as part of a line (the block format matches whole lines), at {}:",
         line_list(&lines)
     )];
     out.extend(
@@ -173,30 +176,36 @@ fn not_at_line_start(content: &str, positions: &[usize]) -> Vec<String> {
             .take(5)
             .map(|&l| gutter(l, idx.line(content, l))),
     );
-    out.push("hint: copy the whole lines, including leading whitespace".into());
-    out
+    out.push(
+        "hint: copy the whole lines, including leading whitespace, or use JSON to match part of a line"
+            .into(),
+    );
+    Some(out)
 }
 
-fn to_not_found(content: &str, to: &str, from_start: usize, lines: bool) -> Mismatch {
+fn to_not_found(content: &str, to: &str, from_start: usize, after: usize, lines: bool) -> Mismatch {
     let idx = LineIndex::new(content);
     let headline = format!(
         "\"to\" not found after \"from\" (line {})",
         idx.line_of(from_start)
     );
     let before = occurrences(&content[..from_start], to, lines);
-    let details = if before.is_empty() {
-        diagnose::not_found(content, to)
-    } else {
-        let mut at: Vec<usize> = before.iter().map(|&p| idx.line_of(p)).collect();
-        at.dedup();
-        vec![format!(
-            "\"to\" occurs only before \"from\", at {}",
-            line_list(&at)
-        )]
+    let details = match lines.then(|| partial_line(content, to, after)).flatten() {
+        Some(details) => details,
+        None if !before.is_empty() => {
+            let mut at: Vec<usize> = before.iter().map(|&p| idx.line_of(p)).collect();
+            at.dedup();
+            vec![format!(
+                "\"to\" occurs only before \"from\", at {}",
+                line_list(&at)
+            )]
+        }
+        None => diagnose::not_found(content, to, "to", after),
     };
     Mismatch { headline, details }
 }
 
+#[cfg(test)]
 #[cfg(test)]
 mod tests {
     use super::*;

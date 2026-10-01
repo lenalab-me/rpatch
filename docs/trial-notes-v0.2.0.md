@@ -1,6 +1,6 @@
 # rpatch v0.2.0 の試用のお願い
 
-rpatch v0.2.0 ができました（コミット `6f3ed42`）。前回のレビュー（`~/project/prod/rpatch/docs/review-2026-10-01.md`）で出た優先順位の 4 項目を、すべて入れています。もう一度試して、感想をもらえると助かります。
+rpatch v0.2.0 ができました（コミット `6f3ed42`）。前回のレビュー（`~/project/prod/rpatch/docs/review-v0.1.0.md`）で出た優先順位の 4 項目を、すべて入れています。もう一度試して、感想をもらえると助かります。
 バイナリは前回と同じ `/Users/you/project/prod/rpatch/target/release/rpatch` です（`-V` で `0.2.0` と出ます）。詳しい仕様は `rpatch --help` に書いてあります。
 
 ## 変わったこと

@@ -1,4 +1,8 @@
-//! Explanations for edits whose `old` did not match the expected number of times.
+//! Explanations for edits whose text did not match the expected number of times.
+//!
+//! `field` names the text in messages ("old", "from" or "to"). `start` limits the
+//! search for similar text to `content[start..]`; line numbers are always for the
+//! whole file.
 
 use crate::text::{LineIndex, gutter, line_list};
 
@@ -35,22 +39,25 @@ pub fn count_mismatch(
     out
 }
 
-/// `old` did not match at all.
-pub fn not_found(content: &str, old: &str) -> Vec<String> {
-    crlf_hint(content, old)
-        .or_else(|| whitespace_hint(content, old))
-        .or_else(|| divergence_hint(content, old))
-        .or_else(|| closest_line_hint(content, old))
+/// `needle` did not match at all.
+pub fn not_found(content: &str, needle: &str, field: &str, start: usize) -> Vec<String> {
+    crlf_hint(content, needle, field, start)
+        .or_else(|| whitespace_hint(content, needle, field, start))
+        .or_else(|| divergence_hint(content, needle, field, start))
+        .or_else(|| closest_line_hint(content, needle, field, start))
         .unwrap_or_else(|| vec!["no similar text found".into()])
 }
 
-fn crlf_hint(content: &str, old: &str) -> Option<Vec<String>> {
-    if !old.contains('\n') || old.contains('\r') || !content.contains(&old.replace('\n', "\r\n")) {
+fn crlf_hint(content: &str, needle: &str, field: &str, start: usize) -> Option<Vec<String>> {
+    if !needle.contains('\n')
+        || needle.contains('\r')
+        || !content[start..].contains(&needle.replace('\n', "\r\n"))
+    {
         return None;
     }
-    Some(vec![
-        "the file uses CRLF line endings; write line breaks in \"old\" as \\r\\n".into(),
-    ])
+    Some(vec![format!(
+        "the file uses CRLF line endings; write line breaks in \"{field}\" as \\r\\n"
+    )])
 }
 
 /// Collapses each whitespace run to a single space. The second value maps each byte
@@ -76,16 +83,21 @@ fn collapse_whitespace(s: &str) -> (String, Vec<usize>) {
     (out, map)
 }
 
-fn whitespace_hint(content: &str, old: &str) -> Option<Vec<String>> {
-    let (needle, _) = collapse_whitespace(old.trim());
+fn whitespace_hint(content: &str, needle: &str, field: &str, start: usize) -> Option<Vec<String>> {
+    let (needle, _) = collapse_whitespace(needle.trim());
     if needle.is_empty() {
         return None;
     }
-    let (hay, map) = collapse_whitespace(content);
+    let (hay, map) = collapse_whitespace(&content[start..]);
     let ranges: Vec<(usize, usize)> = {
         let idx = LineIndex::new(content);
         hay.match_indices(&needle)
-            .map(|(i, _)| (idx.line_of(map[i]), idx.line_of(map[i + needle.len() - 1])))
+            .map(|(i, _)| {
+                (
+                    idx.line_of(start + map[i]),
+                    idx.line_of(start + map[i + needle.len() - 1]),
+                )
+            })
             .collect()
     };
     if ranges.is_empty() {
@@ -115,12 +127,15 @@ fn whitespace_hint(content: &str, old: &str) -> Option<Vec<String>> {
             last + 1 - first - MAX_BLOCK_LINES
         ));
     }
-    out.push("hint: copy \"old\" exactly from the file; rpatch never matches loosely".into());
+    out.push(format!(
+        "hint: copy \"{field}\" exactly from the file; rpatch never matches loosely"
+    ));
     Some(out)
 }
 
 /// Finds the longest prefix of `old` that occurs in the file and shows where it stops matching.
-fn divergence_hint(content: &str, old: &str) -> Option<Vec<String>> {
+fn divergence_hint(content: &str, old: &str, field: &str, start: usize) -> Option<Vec<String>> {
+    let hay = &content[start..];
     let bounds: Vec<usize> = old
         .char_indices()
         .map(|(i, _)| i)
@@ -130,7 +145,7 @@ fn divergence_hint(content: &str, old: &str) -> Option<Vec<String>> {
     let (mut lo, mut hi) = (0, bounds.len() - 1);
     while hi - lo > 1 {
         let mid = (lo + hi) / 2;
-        if content.contains(&old[..bounds[mid]]) {
+        if hay.contains(&old[..bounds[mid]]) {
             lo = mid;
         } else {
             hi = mid;
@@ -141,7 +156,7 @@ fn divergence_hint(content: &str, old: &str) -> Option<Vec<String>> {
         return None;
     }
 
-    let pos = content.find(prefix)?;
+    let pos = start + hay.find(prefix)?;
     let fidx = LineIndex::new(content);
     let oidx = LineIndex::new(old);
     let fline = fidx.line_of(pos + prefix.len());
@@ -152,11 +167,11 @@ fn divergence_hint(content: &str, old: &str) -> Option<Vec<String>> {
         fidx.line(content, fline)
     };
     let mut out = vec![format!(
-        "\"old\" matches the file up to a point, then differs at line {fline}:"
+        "\"{field}\" matches the file up to a point, then differs at line {fline}:"
     )];
-    out.push(gutter("old", oidx.line(old, oline)));
+    out.push(gutter(field, oidx.line(old, oline)));
     out.push(gutter(fline, file_text));
-    let occurrences = content.matches(prefix).count();
+    let occurrences = hay.matches(prefix).count();
     if occurrences > 1 {
         out.push(format!(
             "(the matching part occurs {occurrences} times; showing the first)"
@@ -165,13 +180,14 @@ fn divergence_hint(content: &str, old: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
-/// Compares the first non-blank line of `old` against every line of the file.
-fn closest_line_hint(content: &str, old: &str) -> Option<Vec<String>> {
+/// Compares the first non-blank line of `old` against every line of the file from `start`.
+fn closest_line_hint(content: &str, old: &str, field: &str, start: usize) -> Option<Vec<String>> {
     let target = old.lines().map(str::trim).find(|l| !l.is_empty())?;
     let target_len = target.chars().count();
     let idx = LineIndex::new(content);
+    let first = idx.line_of(start);
     let mut best: Option<(f64, usize)> = None;
-    for (i, line) in content.lines().enumerate() {
+    for (i, line) in content.lines().enumerate().skip(first - 1) {
         let t = line.trim();
         let len = t.chars().count();
         if len.abs_diff(target_len) * 2 > len.max(target_len) {
@@ -185,10 +201,10 @@ fn closest_line_hint(content: &str, old: &str) -> Option<Vec<String>> {
     let (score, line) = best.filter(|&(s, _)| s >= 0.5)?;
     Some(vec![
         format!(
-            "closest line to the first line of \"old\" ({:.0}% similar):",
+            "closest line to the first line of \"{field}\" ({:.0}% similar):",
             score * 100.0
         ),
-        gutter("old", target),
+        gutter(field, target),
         gutter(line, idx.line(content, line)),
     ])
 }

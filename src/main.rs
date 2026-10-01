@@ -34,10 +34,14 @@ Block format (stdin not starting with `{`):
   <<<<<<< OLD count=N      replace N matches instead of exactly 1
   <<<<<<< FROM / <<<<<<< TO / ======= / >>>>>>> NEW
                            replace from the FROM lines up to, not including, the
-                           first TO lines after them (FROM is replaced, TO is kept)
+                           first TO lines after them (FROM is replaced, TO is kept;
+                           to delete an end marker line too, use the line after it
+                           as TO)
   Blocks are whole lines: they match only at line starts and follow the file's
-  line endings (LF or CRLF). If the text has a line that is exactly `=======`,
-  use JSON instead.
+  line endings (LF or CRLF).
+  Markers may be longer than 7 characters. A block opened with `<<<<<<<<< OLD`
+  (9) ends only at `=========` and `>>>>>>>>> NEW` (9), so lines with 7-character
+  markers inside it are plain text.
 
 JSON (stdin starting with `{`):
   {"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1},
