@@ -123,9 +123,26 @@ struct Block {
     first: String,
     second: String,
     new: String,
+    /// Lines that look like markers of another length: (line, text, length).
+    odd: Vec<(usize, String, usize)>,
 }
 
 impl Block {
+    /// Points at marker-like lines whose length differs from this block's markers,
+    /// the likely cause when a block does not close where expected.
+    fn length_hints(&self) -> String {
+        self.odd
+            .iter()
+            .take(3)
+            .map(|(n, line, len)| {
+                format!(
+                    "\n  hint: line {n} has `{line}` ({len} characters), but this block's markers are {} characters long",
+                    self.markers.open.len()
+                )
+            })
+            .collect()
+    }
+
     /// Error for a marker line that does not fit the current part.
     fn unexpected(&self, n: usize, line: &str) -> String {
         let m = &self.markers;
@@ -134,6 +151,9 @@ impl Block {
             self.part.name(),
             self.part_start
         );
+        if !self.odd.is_empty() {
+            return msg + &self.length_hints();
+        }
         let missing = match self.part {
             Part::Old | Part::To if line == m.close => Some(m.sep.as_str()),
             Part::Old | Part::To if m.is_opener(line) => Some(m.sep.as_str()),
@@ -187,6 +207,7 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                     first: String::new(),
                     second: String::new(),
                     new: String::new(),
+                    odd: Vec::new(),
                 });
             } else if !line.trim().is_empty() {
                 let mut msg = format!(
@@ -236,9 +257,17 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                 });
             }
             _ if m.is_marker(line) => return Err(b.unexpected(n, line)),
-            Part::Old | Part::From => push_line(&mut b.first, line),
-            Part::To => push_line(&mut b.second, line),
-            Part::New => push_line(&mut b.new, line),
+            part => {
+                if let Some(len) = marker_like_len(line).filter(|&len| len != m.open.len()) {
+                    b.odd.push((n, line.to_string(), len));
+                }
+                let buf = match part {
+                    Part::Old | Part::From => &mut b.first,
+                    Part::To => &mut b.second,
+                    Part::New => &mut b.new,
+                };
+                push_line(buf, line);
+            }
         }
     }
 
@@ -250,11 +279,29 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
             Part::New => format!("`{}`", m.close),
         };
         return Err(format!(
-            "line {}: block is not closed (missing {missing})",
-            b.start
+            "line {}: block is not closed (missing {missing}){}",
+            b.start,
+            b.length_hints()
         ));
     }
     Ok(edits)
+}
+
+/// The length of a line that looks like a marker of any length (`<<<<< OLD`, `=====`,
+/// `>>>>> NEW`, ...).
+fn marker_like_len(line: &str) -> Option<usize> {
+    let c = *line.as_bytes().first()?;
+    if !matches!(c, b'<' | b'=' | b'>') {
+        return None;
+    }
+    let len = line.bytes().take_while(|&b| b == c).count();
+    let rest = &line[len..];
+    let shaped = match c {
+        b'<' => rest == " FROM" || rest == " TO" || rest.starts_with(" OLD"),
+        b'=' => rest.is_empty(),
+        _ => rest == " NEW",
+    };
+    (shaped && len >= 3).then_some(len)
 }
 
 fn push_line(buf: &mut String, line: &str) {

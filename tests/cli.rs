@@ -869,3 +869,35 @@ fn block_hint_for_short_markers() {
     .code(2)
     .stderr(predicate::str::contains("at least 7"));
 }
+
+// --- 3 回目のコメント: 区切りの長さの食い違い -------------------------------------
+
+#[test]
+fn unclosed_block_points_at_markers_of_another_length() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<<<< OLD\na\n=========\nb\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("not closed"))
+    .stderr(predicate::str::contains(
+        "line 6 has `>>>>>>> NEW` (7 characters), but this block's markers are 9 characters long",
+    ));
+}
+
+#[test]
+fn mistyped_separator_length_is_named_instead_of_longer_markers() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<<<< OLD\na\n========\nb\n>>>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "line 4 has `========` (8 characters), but this block's markers are 9 characters long",
+    ))
+    .stderr(predicate::str::contains("<<<<<<<<<<< OLD").not());
+}
