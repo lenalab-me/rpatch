@@ -53,14 +53,29 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
             }
             let start = starts[0];
             let after = start + from.len();
-            match occurrences(&content[after..], &to, edit.lines).first() {
-                Some(&q) => Ok(vec![Span {
-                    start,
-                    end: after + q,
-                    new: new.into_owned(),
-                }]),
-                None => Err(to_not_found(content, &to, start, after, edit.lines)),
+            let Some(&q) = occurrences(&content[after..], &to, edit.lines).first() else {
+                return Err(to_not_found(content, &to, start, after, edit.lines));
+            };
+            let end = after + q;
+            if new.ends_with(to.as_ref()) {
+                // An easy slip: TO is kept, so repeating it at the end of NEW doubles it.
+                let idx = LineIndex::new(content);
+                let line = idx.line_of(end);
+                return Err(Mismatch {
+                    headline: "\"new\" ends with the \"to\" text, which is kept, so it would appear twice"
+                        .into(),
+                    details: vec![
+                        format!("\"to\" matched at line {line}, right after the range:"),
+                        gutter(line, idx.line(content, line)),
+                        "hint: remove the \"to\" lines from the end of \"new\"; to really repeat them, use OLD instead of FROM/TO".into(),
+                    ],
+                });
             }
+            Ok(vec![Span {
+                start,
+                end,
+                new: new.into_owned(),
+            }])
         }
     }
 }

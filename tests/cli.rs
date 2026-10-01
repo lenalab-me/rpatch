@@ -96,7 +96,7 @@ fn duplicate_match_with_matching_count_replaces_all() {
         &json!({"edits": [{"file": "a.js", "old": "x = 1;", "new": "x = 9;", "count": 2}]}),
     )
     .success()
-    .stdout("M a.js  edits=1  lines=1,3\n");
+    .stdout("M a.js  edits=1  at_lines=1,3\n");
     assert_eq!(read(&dir, "a.js"), "x = 9;\ny = 2;\nx = 9;\n");
 }
 
@@ -132,7 +132,7 @@ fn edits_to_same_file_apply_in_order() {
         ]}),
     )
     .success()
-    .stdout("M a.txt  edits=2  lines=1\n");
+    .stdout("M a.txt  edits=2  at_lines=1-2\n");
     assert_eq!(read(&dir, "a.txt"), "1\n2\n");
 }
 
@@ -148,7 +148,7 @@ fn reported_lines_refer_to_the_final_file() {
         ]}),
     )
     .success()
-    .stdout("M a.txt  edits=2  lines=2,5\n");
+    .stdout("M a.txt  edits=2  at_lines=2-3,5\n");
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn multiple_files_one_line_each() {
         ]}),
     )
     .success()
-    .stdout("M a.txt  edits=1  lines=1\nM sub/b.txt  edits=1  lines=1\n");
+    .stdout("M a.txt  edits=1  at_lines=1\nM sub/b.txt  edits=1  at_lines=1\n");
     assert_eq!(read(&dir, "a.txt"), "A\n");
     assert_eq!(read(&dir, "sub/b.txt"), "B\n");
 }
@@ -180,7 +180,7 @@ fn same_file_with_different_spellings_is_one_file() {
         ]}),
     )
     .success()
-    .stdout("M a.txt  edits=2  lines=1\n");
+    .stdout("M a.txt  edits=2  at_lines=1\n");
     assert_eq!(read(&dir, "a.txt"), "z\n");
 }
 
@@ -218,7 +218,7 @@ fn dry_run_writes_nothing() {
         &json!({"edits": [{"file": "a.txt", "old": "hello", "new": "bye"}]}),
     )
     .success()
-    .stdout(predicate::str::contains("M a.txt  edits=1  lines=1\n"))
+    .stdout(predicate::str::contains("M a.txt  edits=1  at_lines=1\n"))
     .stdout(predicate::str::contains("dry run"));
     assert_eq!(read(&dir, "a.txt"), "hello\n");
 }
@@ -523,7 +523,7 @@ function help(svc, cmd, sub) {
 "#,
     )
     .success()
-    .stdout("M app.mjs  edits=1  lines=1\n");
+    .stdout("M app.mjs  edits=1  at_lines=1-2\n");
     assert_eq!(
         read(&dir, "app.mjs"),
         r#"function help(svc, cmd, sub) {
@@ -544,7 +544,7 @@ fn block_multiple_files_and_count() {
          === b.txt\n<<<<<<< OLD\n1\n=======\none\n>>>>>>> NEW\n<<<<<<< OLD\n2\n=======\ntwo\n>>>>>>> NEW\n",
     )
     .success()
-    .stdout("M a.txt  edits=1  lines=1,3\nM b.txt  edits=2  lines=1,2\n");
+    .stdout("M a.txt  edits=1  at_lines=1,3\nM b.txt  edits=2  at_lines=1-2\n");
     assert_eq!(read(&dir, "a.txt"), "X\ny\nX\n");
     assert_eq!(read(&dir, "b.txt"), "one\ntwo\n");
 }
@@ -656,7 +656,7 @@ fn range_replaces_from_anchor_up_to_but_not_including_to() {
         }]}),
     )
     .success()
-    .stdout(predicate::str::contains("M i.html  edits=1  lines=2\n"))
+    .stdout(predicate::str::contains("M i.html  edits=1  at_lines=2\n"))
     .stdout(predicate::str::contains(
         "edits[0] replaced lines 2-4 (3 lines) with 1 line",
     ));
@@ -900,4 +900,48 @@ fn mistyped_separator_length_is_named_instead_of_longer_markers() {
         "line 4 has `========` (8 characters), but this block's markers are 9 characters long",
     ))
     .stderr(predicate::str::contains("<<<<<<<<<<< OLD").not());
+}
+
+// --- 4 回目のコメント: 出力の at_lines と、範囲置換で TO を重ねて書いたとき ----------
+
+/// 前後の文脈の行を OLD と NEW の両方に書いても、実際に変わった行だけを示す。
+#[test]
+fn at_lines_skips_identical_context_lines() {
+    let dir = setup(&[("a.txt", "1\n2\n3\n4\n5\n6\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\n2\n3\n4\n=======\n2\nTHREE\n4\n>>>>>>> NEW\n<<<<<<< OLD\n5\n6\n=======\n5\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout("M a.txt  edits=2  at_lines=3,5\n");
+    assert_eq!(read(&dir, "a.txt"), "1\n2\nTHREE\n4\n5\n");
+}
+
+#[test]
+fn at_lines_for_appending_at_the_end() {
+    let dir = setup(&[("a.txt", "1\n2\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\n2\n=======\n2\n3\n4\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout("M a.txt  edits=1  at_lines=3-4\n");
+}
+
+/// TO は残るので、NEW の末尾にも TO を書くと 2 回出てくる。よくある書き間違いなので失敗にする。
+#[test]
+fn range_rejects_new_ending_with_the_kept_to() {
+    let original = "mod t {\n    fn a() {}\n}\n";
+    let dir = setup(&[("a.rs", original)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.rs\n<<<<<<< FROM\n    fn a() {}\n<<<<<<< TO\n}\n=======\n    fn b() {}\n}\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("would appear twice"))
+    .stderr(predicate::str::contains("3 | }"));
+    assert_eq!(read(&dir, "a.rs"), original);
 }

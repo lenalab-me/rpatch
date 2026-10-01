@@ -36,7 +36,7 @@ Block format (stdin not starting with `{`):
                            replace from the FROM lines up to, not including, the
                            first TO lines after them (FROM is replaced, TO is kept;
                            to delete an end marker line too, use the line after it
-                           as TO)
+                           as TO; NEW must not end with the TO lines)
   Blocks are whole lines: they match only at line starts and follow the file's
   line endings (LF or CRLF).
   Markers may be longer than 7 characters. A block opened with `<<<<<<<<< OLD`
@@ -53,6 +53,12 @@ Rules:
   - The number of matches must equal the count (default 1). FROM must match once.
   - Edits to the same file apply in order; each one sees the result of the previous.
   - Nothing is written unless every edit matches. Each file is replaced via temp file + rename.
+
+Output:
+  One line per file: `M <file>  edits=<n>  at_lines=3,10-12`. at_lines are the lines
+  of the edited file that changed; lines that OLD and NEW share at the start or end
+  are not counted, and a deletion shows the line where it happened. A range edit also
+  prints which lines it replaced. Errors go to stderr, and nothing is written.
 
 Options:
   --diff         also print a unified diff of the changes
@@ -82,20 +88,48 @@ struct FileState {
     perms: Permissions,
     applied: Vec<usize>,
     skipped: Vec<usize>,
-    /// Byte offsets in `content` where replacement text starts.
-    marks: Vec<usize>,
+    /// Byte ranges in `content` that the applied edits changed.
+    changes: Vec<(usize, usize)>,
     /// Extra lines printed under the file's summary line.
     notes: Vec<String>,
     failed: bool,
 }
 
 impl FileState {
-    fn changed_lines(&self) -> Vec<usize> {
-        let idx = LineIndex::new(&self.content);
-        let mut lines: Vec<usize> = self.marks.iter().map(|&m| idx.line_of(m)).collect();
-        lines.sort_unstable();
-        lines.dedup();
-        lines
+    /// Changed lines as "3", "5-7" and so on, merged and in order.
+    fn changed_lines(&self) -> String {
+        let c = &self.content;
+        let idx = LineIndex::new(c);
+        // A deletion at the very end points at the last line, not past it.
+        let max = idx.line_of(c.len().saturating_sub(1));
+        let mut ranges: Vec<(usize, usize)> = self
+            .changes
+            .iter()
+            .map(|&(s, e)| {
+                let first = idx.line_of(s).min(max);
+                let last = if e > s { idx.line_of(e - 1) } else { first };
+                (first, last.min(max))
+            })
+            .collect();
+        ranges.sort_unstable();
+        let mut merged: Vec<(usize, usize)> = Vec::new();
+        for (a, b) in ranges {
+            match merged.last_mut() {
+                Some(last) if a <= last.1 + 1 => last.1 = last.1.max(b),
+                _ => merged.push((a, b)),
+            }
+        }
+        merged
+            .iter()
+            .map(|&(a, b)| {
+                if a == b {
+                    a.to_string()
+                } else {
+                    format!("{a}-{b}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 
@@ -160,13 +194,12 @@ fn run() -> Result<(), u8> {
 
     let mut out = String::new();
     for f in &files {
-        let lines: Vec<String> = f.changed_lines().iter().map(|l| l.to_string()).collect();
         let _ = writeln!(
             out,
-            "M {}  edits={}  lines={}",
+            "M {}  edits={}  at_lines={}",
             f.display,
             f.applied.len(),
-            lines.join(",")
+            f.changed_lines()
         );
         for note in &f.notes {
             let _ = writeln!(out, "  {note}");
@@ -268,7 +301,7 @@ fn load_files(edits: &[Edit], report: &mut Report) -> (Vec<FileState>, Vec<Optio
                         perms,
                         applied: Vec::new(),
                         skipped: Vec::new(),
-                        marks: Vec::new(),
+                        changes: Vec::new(),
                         notes: Vec::new(),
                         failed: false,
                     });
@@ -343,7 +376,7 @@ fn apply_edits(
                 if matches!(e.target, Target::Range { .. }) {
                     f.notes.push(range_note(i, &f.content, &spans[0]));
                 }
-                f.content = splice(&f.content, &spans, &mut f.marks);
+                f.content = splice(&f.content, &spans, &mut f.changes);
                 f.applied.push(i);
             }
             Err(mut m) => {
@@ -395,9 +428,10 @@ fn plural(n: usize, word: &str) -> String {
     }
 }
 
-/// Replaces each span (non-overlapping, ascending). Existing `marks` are moved to their
-/// new offsets, and the start of each inserted text is added as a mark.
-fn splice(content: &str, spans: &[Span], marks: &mut Vec<usize>) -> String {
+/// Replaces each span (non-overlapping, ascending). Existing `changes` are moved to
+/// their new offsets. For each span, the part of the new text that differs from the
+/// text it replaced (not counting identical leading and trailing lines) is added.
+fn splice(content: &str, spans: &[Span], changes: &mut Vec<(usize, usize)>) -> String {
     let mut out = String::with_capacity(content.len());
     let mut new_starts = Vec::with_capacity(spans.len());
     let mut last = 0;
@@ -409,20 +443,47 @@ fn splice(content: &str, spans: &[Span], marks: &mut Vec<usize>) -> String {
     }
     out.push_str(&content[last..]);
 
-    for m in marks.iter_mut() {
-        let k = spans.partition_point(|s| s.start <= *m);
+    let remap = |m: usize| {
+        let k = spans.partition_point(|s| s.start <= m);
         if k == 0 {
-            continue;
+            return m;
         }
         let (s, ns) = (&spans[k - 1], new_starts[k - 1]);
-        *m = if *m < s.end {
+        if m < s.end {
             ns
         } else {
-            *m - s.end + ns + s.new.len()
-        };
+            m - s.end + ns + s.new.len()
+        }
+    };
+    for c in changes.iter_mut() {
+        *c = (remap(c.0), remap(c.1));
     }
-    marks.extend(new_starts);
+    for (s, &ns) in spans.iter().zip(&new_starts) {
+        let (pre, suf) = common_lines(&content[s.start..s.end], &s.new);
+        changes.push((ns + pre, ns + s.new.len() - suf));
+    }
     out
+}
+
+/// Byte lengths of the whole lines that `old` and `new` share at the start and at the
+/// end (the end part never overlaps the start part).
+fn common_lines(old: &str, new: &str) -> (usize, usize) {
+    let a: Vec<&str> = old.split_inclusive('\n').collect();
+    let b: Vec<&str> = new.split_inclusive('\n').collect();
+    let p = a
+        .iter()
+        .zip(&b)
+        .take_while(|(x, y)| x == y && x.ends_with('\n'))
+        .count();
+    let s = a[p..]
+        .iter()
+        .rev()
+        .zip(b[p..].iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count();
+    let pre = b[..p].iter().map(|l| l.len()).sum();
+    let suf = b[b.len() - s..].iter().map(|l| l.len()).sum();
+    (pre, suf)
 }
 
 fn edit_list(ids: &[usize]) -> String {
@@ -445,23 +506,33 @@ mod tests {
     }
 
     #[test]
-    fn marks_follow_later_edits() {
-        let mut marks = vec![];
-        let s = splice("aXbXc", &[span(1, 2, "YY"), span(3, 4, "YY")], &mut marks);
+    fn changes_follow_later_edits() {
+        let mut changes = vec![];
+        let s = splice("aXbXc", &[span(1, 2, "YY"), span(3, 4, "YY")], &mut changes);
         assert_eq!(s, "aYYbYYc");
-        assert_eq!(marks, vec![1, 4]);
-        // Replace "b" (offset 3) with nothing: the mark after it shifts left by one,
-        // and a mark is added where "b" was.
-        let s = splice(&s, &[span(3, 4, "")], &mut marks);
+        assert_eq!(changes, vec![(1, 3), (4, 6)]);
+        // Delete "b" (offset 3): the later range shifts left by one, and an empty
+        // range is added where "b" was.
+        let s = splice(&s, &[span(3, 4, "")], &mut changes);
         assert_eq!(s, "aYYYYc");
-        assert_eq!(marks, vec![1, 3, 3]);
+        assert_eq!(changes, vec![(1, 3), (3, 5), (3, 3)]);
     }
 
     #[test]
-    fn mark_inside_a_replaced_region_moves_to_its_start() {
-        let mut marks = vec![2];
-        let s = splice("abcdef", &[span(1, 4, "Z")], &mut marks);
+    fn change_inside_a_replaced_region_moves_to_its_start() {
+        let mut changes = vec![(2, 3)];
+        let s = splice("abcdef", &[span(1, 4, "Z")], &mut changes);
         assert_eq!(s, "aZef");
-        assert_eq!(marks, vec![1, 1]);
+        assert_eq!(changes, vec![(1, 1), (1, 2)]);
+    }
+
+    #[test]
+    fn identical_context_lines_are_not_changes() {
+        // Context line kept, next line deleted: nothing inserted, at the deleted line.
+        assert_eq!(common_lines("ctx\ndel\n", "ctx\n"), (4, 0));
+        // Only the middle line differs.
+        assert_eq!(common_lines("a\nb\nc\n", "a\nB\nc\n"), (2, 2));
+        // A partial last line is never a shared start line.
+        assert_eq!(common_lines("ab", "ab c"), (0, 0));
     }
 }
