@@ -945,3 +945,135 @@ fn range_rejects_new_ending_with_the_kept_to() {
     .stderr(predicate::str::contains("3 | }"));
     assert_eq!(read(&dir, "a.rs"), original);
 }
+
+// --- v0.4.1 の試用メモ（docs/review-v0.4.1.md）: BEFORE / AFTER など ---------------
+
+const PARA: &str =
+    "# plan\nThis is a very long paragraph that goes on and on, written as one line.\nnext\n";
+
+#[test]
+fn after_inserts_below_the_line_containing_the_anchor() {
+    let dir = setup(&[("p.md", PARA)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== p.md\n<<<<<<< AFTER\nThis is a very long\n=======\nadded 1\nadded 2\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout("M p.md  edits=1  at_lines=3-4\n");
+    assert_eq!(
+        read(&dir, "p.md"),
+        "# plan\nThis is a very long paragraph that goes on and on, written as one line.\nadded 1\nadded 2\nnext\n"
+    );
+}
+
+#[test]
+fn before_inserts_above_the_line_containing_the_anchor() {
+    let dir = setup(&[("p.md", PARA)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== p.md\n<<<<<<< BEFORE\ngoes on and on\n=======\nadded\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout("M p.md  edits=1  at_lines=2\n");
+    assert_eq!(
+        read(&dir, "p.md"),
+        "# plan\nadded\nThis is a very long paragraph that goes on and on, written as one line.\nnext\n"
+    );
+}
+
+#[test]
+fn insert_anchor_must_match_count_times() {
+    let dir = setup(&[("a.sh", "esac\nfoo\nesac\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.sh\n<<<<<<< AFTER\nesac\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "\"after\": expected 1 match, found 2",
+    ));
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.sh\n<<<<<<< AFTER count=2\nesac\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout("M a.sh  edits=1  at_lines=2,5\n");
+    assert_eq!(read(&dir, "a.sh"), "esac\nx\nfoo\nesac\nx\n");
+}
+
+#[test]
+fn insert_anchor_twice_on_one_line_is_rejected() {
+    let dir = setup(&[("a.txt", "a, a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< BEFORE count=2\na\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("on the same line"));
+}
+
+#[test]
+fn after_last_line_without_newline() {
+    let dir = setup(&[("a.txt", "a\nb")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< AFTER\nb\n=======\nc\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "a\nb\nc");
+}
+
+#[test]
+fn insert_follows_crlf() {
+    let dir = setup(&[("a.txt", "a\r\nb\r\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< AFTER\na\n=======\nx\ny\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "a\r\nx\r\ny\r\nb\r\n");
+}
+
+#[test]
+fn insert_anchor_not_found_shows_closest_line() {
+    let dir = setup(&[("p.md", PARA)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== p.md\n<<<<<<< AFTER\nThis is a very lng paragraph\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("\"after\" not found"))
+    .stderr(predicate::str::contains(
+        "2 | This is a very long paragraph",
+    ));
+}
+
+#[test]
+fn partial_line_hint_mentions_before_and_after() {
+    let dir = setup(&[("p.md", PARA)]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== p.md\n<<<<<<< OLD\nThis is a very long\n=======\nadded\nThis is a very long\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("only as part of a line"))
+    .stderr(predicate::str::contains("BEFORE"));
+}
+
+#[test]
+fn unknown_flag_prints_a_short_usage() {
+    let dir = setup(&[]);
+    rpatch_raw(dir.path(), &["-F"], "")
+        .code(2)
+        .stderr(predicate::str::contains("rpatch --help"))
+        .stderr(predicate::str::contains("Block format").not());
+}

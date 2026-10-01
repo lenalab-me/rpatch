@@ -42,6 +42,10 @@ Block format (stdin not starting with `{`):
   Markers may be longer than 7 characters. A block opened with `<<<<<<<<< OLD`
   (9) ends only at `=========` and `>>>>>>>>> NEW` (9), so lines with 7-character
   markers inside it are plain text.
+  <<<<<<< BEFORE / <<<<<<< AFTER, then ======= and >>>>>>> NEW (count=N allowed)
+                           insert the NEW lines before/after each line that contains
+                           the BEFORE/AFTER text; that text may be any part of the
+                           line, since no existing line is rewritten
 
 JSON (stdin starting with `{`):
   {"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1},
@@ -53,6 +57,11 @@ Rules:
   - The number of matches must equal the count (default 1). FROM must match once.
   - Edits to the same file apply in order; each one sees the result of the previous.
   - Nothing is written unless every edit matches. Each file is replaced via temp file + rename.
+
+Tips:
+  - Always quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
+  - Chain follow-up commands with &&, so they do not run after a failed edit.
+  - To edit part of a long line, use JSON; to add lines next to one, use BEFORE/AFTER.
 
 Output:
   One line per file: `M <file>  edits=<n>  at_lines=3,10-12`. at_lines are the lines
@@ -69,6 +78,8 @@ Options:
 
 Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input, 3 I/O error
 "#;
+
+const SHORT_USAGE: &str = "usage: rpatch [--diff] [--dry-run] <<'EOF' ... EOF   (see `rpatch --help` for the input format)";
 
 const EXIT_MISMATCH: u8 = 1;
 const EXIT_INPUT: u8 = 2;
@@ -240,7 +251,7 @@ fn parse_args() -> Result<Option<Opts>, u8> {
                 return Ok(None);
             }
             _ => {
-                eprint!("rpatch: unknown argument: {arg}\n\n{USAGE}");
+                eprintln!("rpatch: unknown argument: {arg}\n{SHORT_USAGE}");
                 return Err(EXIT_INPUT);
             }
         }
@@ -251,7 +262,7 @@ fn parse_args() -> Result<Option<Opts>, u8> {
 fn read_edits() -> Result<Vec<Edit>, u8> {
     let mut stdin = io::stdin();
     if stdin.is_terminal() {
-        eprint!("rpatch: expected edits on stdin\n\n{USAGE}");
+        eprintln!("rpatch: expected edits on stdin\n{SHORT_USAGE}");
         return Err(EXIT_INPUT);
     }
     let mut text = String::new();

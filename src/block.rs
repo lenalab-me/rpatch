@@ -14,6 +14,11 @@
 //! =======
 //! replacement lines
 //! >>>>>>> NEW
+//! <<<<<<< AFTER          (or BEFORE; insert lines next to each line containing this
+//! part of a line         text, which may be any part of the line)
+//! =======
+//! lines to insert
+//! >>>>>>> NEW
 //! ```
 //!
 //! Markers are 7 or more characters long. A block opened with N `<` is closed only by
@@ -52,8 +57,12 @@ impl Markers {
     }
 
     fn is_opener(&self, line: &str) -> bool {
-        line.strip_prefix(&self.open)
-            .is_some_and(|rest| rest == " FROM" || rest.starts_with(" OLD"))
+        line.strip_prefix(&self.open).is_some_and(|rest| {
+            rest == " FROM"
+                || [" OLD", " BEFORE", " AFTER"]
+                    .iter()
+                    .any(|w| rest.starts_with(w))
+        })
     }
 }
 
@@ -76,37 +85,59 @@ impl Part {
     }
 }
 
-enum Opener {
-    Old(usize),
-    From,
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Replace,
+    Range,
+    Insert { after: bool },
 }
 
-/// Parses `<<<<<<< OLD`, `<<<<<<< OLD count=N` or `<<<<<<< FROM` (7 or more `<`).
-/// `None` if the line does not start with 7 `<`.
-fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Opener), String>> {
+impl Kind {
+    /// The name of the block's first part, as written in its opener.
+    fn first_part(self) -> &'static str {
+        match self {
+            Kind::Replace => "OLD",
+            Kind::Range => "FROM",
+            Kind::Insert { after: false } => "BEFORE",
+            Kind::Insert { after: true } => "AFTER",
+        }
+    }
+}
+
+/// Parses an opener such as `<<<<<<< OLD`, `<<<<<<< AFTER count=2` or `<<<<<<< FROM`
+/// (7 or more `<`) into (marker length, kind, count). `None` if the line does not
+/// start with 7 `<`.
+fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Kind, usize), String>> {
     let len = line.bytes().take_while(|&b| b == b'<').count();
     if len < MIN_MARKER {
         return None;
     }
     let open = &line[..len];
     let rest = &line[len..];
-    let parsed = if rest == " FROM" {
-        Some(Opener::From)
-    } else if let Some(count) = rest.strip_prefix(" OLD") {
-        if count.is_empty() {
-            Some(Opener::Old(1))
+    // `None`: not this word. `Some(None)`: this word with a malformed count.
+    let with_count = |word: &str| {
+        let c = rest.strip_prefix(word)?;
+        Some(if c.is_empty() {
+            Some(1)
         } else {
-            count
-                .strip_prefix(" count=")
+            c.strip_prefix(" count=")
                 .and_then(|c| c.trim().parse().ok())
-                .map(Opener::Old)
-        }
+        })
+    };
+    let parsed = if rest == " FROM" {
+        Some((Kind::Range, 1))
+    } else if let Some(c) = with_count(" OLD") {
+        c.map(|c| (Kind::Replace, c))
+    } else if let Some(c) = with_count(" BEFORE") {
+        c.map(|c| (Kind::Insert { after: false }, c))
+    } else if let Some(c) = with_count(" AFTER") {
+        c.map(|c| (Kind::Insert { after: true }, c))
     } else {
         None
     };
-    Some(parsed.map(|o| (len, o)).ok_or_else(|| {
+    Some(parsed.map(|(kind, count)| (len, kind, count)).ok_or_else(|| {
         format!(
-            "line {n}: expected `{open} OLD`, `{open} OLD count=N` or `{open} FROM`, found `{line}`"
+            "line {n}: expected `{open} OLD`, `{open} FROM`, `{open} BEFORE` or `{open} AFTER` (OLD, BEFORE and AFTER may add ` count=N`), found `{line}`"
         )
     }))
 }
@@ -119,7 +150,7 @@ struct Block {
     /// Line where the current part starts.
     part_start: usize,
     count: usize,
-    range: bool,
+    kind: Kind,
     first: String,
     second: String,
     new: String,
@@ -148,7 +179,10 @@ impl Block {
         let m = &self.markers;
         let mut msg = format!(
             "line {n}: unexpected `{line}` inside the {} part that starts at line {}",
-            self.part.name(),
+            match self.part {
+                Part::Old | Part::From => self.kind.first_part(),
+                part => part.name(),
+            },
             self.part_start
         );
         if !self.odd.is_empty() {
@@ -187,15 +221,16 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                 }
                 file = Some(path.to_string());
             } else if let Some(opener) = parse_opener(n, line) {
-                let (len, opener) = opener?;
+                let (len, kind, count) = opener?;
                 if file.is_none() {
                     return Err(format!(
                         "line {n}: `{line}` comes before any `=== <file>` line"
                     ));
                 }
-                let (part, count) = match opener {
-                    Opener::Old(count) => (Part::Old, count),
-                    Opener::From => (Part::From, 1),
+                let part = if kind == Kind::Range {
+                    Part::From
+                } else {
+                    Part::Old
                 };
                 block = Some(Block {
                     markers: Markers::new(len),
@@ -203,7 +238,7 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                     start: n,
                     part_start: n,
                     count,
-                    range: part == Part::From,
+                    kind,
                     first: String::new(),
                     second: String::new(),
                     new: String::new(),
@@ -211,7 +246,7 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                 });
             } else if !line.trim().is_empty() {
                 let mut msg = format!(
-                    "line {n}: expected `=== <file>`, `<<<<<<< OLD` or `<<<<<<< FROM`, found `{line}`"
+                    "line {n}: expected `=== <file>` or a block opener (`<<<<<<< OLD`, `FROM`, `BEFORE` or `AFTER`), found `{line}`"
                 );
                 if line.starts_with(['<', '=', '>']) {
                     msg += "\n  hint: markers need at least 7 characters, e.g. `<<<<<<< OLD`";
@@ -239,13 +274,16 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
             }
             Part::New if line == m.close => {
                 let b = block.take().expect("inside a block");
-                let target = if b.range {
-                    Target::Range {
+                let target = match b.kind {
+                    Kind::Replace => Target::Text(b.first),
+                    Kind::Range => Target::Range {
                         from: b.first,
                         to: b.second,
-                    }
-                } else {
-                    Target::Text(b.first)
+                    },
+                    Kind::Insert { after } => Target::Insert {
+                        anchor: b.first,
+                        after,
+                    },
                 };
                 edits.push(Edit {
                     file: file.clone().unwrap_or_default(),
@@ -297,7 +335,13 @@ fn marker_like_len(line: &str) -> Option<usize> {
     let len = line.bytes().take_while(|&b| b == c).count();
     let rest = &line[len..];
     let shaped = match c {
-        b'<' => rest == " FROM" || rest == " TO" || rest.starts_with(" OLD"),
+        b'<' => {
+            rest == " FROM"
+                || rest == " TO"
+                || [" OLD", " BEFORE", " AFTER"]
+                    .iter()
+                    .any(|w| rest.starts_with(w))
+        }
         b'=' => rest.is_empty(),
         _ => rest == " NEW",
     };

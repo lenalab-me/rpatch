@@ -44,6 +44,58 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                 "old", content, &old, &positions, edit.count, edit.lines,
             ))
         }
+        Target::Insert { anchor, after } => {
+            let field = if *after { "after" } else { "before" };
+            let nl = if crlf { "\r\n" } else { "\n" };
+            let anchor = adapt(anchor, crlf);
+            let text = anchor.strip_suffix(nl).unwrap_or(&anchor);
+            // Part of a line is enough: inserting at line boundaries rewrites no line.
+            let positions = occurrences(content, text, false);
+            if positions.len() != edit.count {
+                return Err(mismatch(
+                    field, content, text, &positions, edit.count, false,
+                ));
+            }
+            let points: Vec<usize> = positions
+                .iter()
+                .map(|&p| {
+                    if *after {
+                        line_end(content, p + text.len())
+                    } else {
+                        line_start(content, p)
+                    }
+                })
+                .collect();
+            if let Some(k) = points.windows(2).position(|w| w[0] == w[1]) {
+                let idx = LineIndex::new(content);
+                let line = idx.line_of(positions[k]);
+                return Err(Mismatch {
+                    headline: format!("\"{field}\" matches more than once on the same line"),
+                    details: vec![
+                        gutter(line, idx.line(content, line)),
+                        format!("hint: change \"{field}\" so that it matches once per line"),
+                    ],
+                });
+            }
+            Ok(points
+                .into_iter()
+                .map(|p| {
+                    // After a last line without a line break: add the break before the
+                    // new lines, and keep the file without a final break.
+                    let new =
+                        if p == content.len() && !content.is_empty() && !content.ends_with('\n') {
+                            format!("{nl}{}", new.strip_suffix(nl).unwrap_or(&new))
+                        } else {
+                            new.to_string()
+                        };
+                    Span {
+                        start: p,
+                        end: p,
+                        new,
+                    }
+                })
+                .collect())
+        }
         Target::Range { from, to } => {
             let from = adapt(from, crlf);
             let to = adapt(to, crlf);
@@ -78,6 +130,15 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
             }])
         }
     }
+}
+
+fn line_start(content: &str, p: usize) -> usize {
+    content[..p].rfind('\n').map_or(0, |i| i + 1)
+}
+
+/// The offset just past the line break of the line that contains `p`.
+fn line_end(content: &str, p: usize) -> usize {
+    content[p..].find('\n').map_or(content.len(), |i| p + i + 1)
 }
 
 fn adapt(s: &str, crlf: bool) -> Cow<'_, str> {
@@ -192,7 +253,7 @@ fn partial_line(content: &str, needle: &str, start: usize) -> Option<Vec<String>
             .map(|&l| gutter(l, idx.line(content, l))),
     );
     out.push(
-        "hint: copy the whole lines, including leading whitespace, or use JSON to match part of a line"
+        "hint: copy the whole lines, including leading whitespace, or use JSON to match part of a line; to only add lines next to it, use BEFORE/AFTER, which accept part of a line"
             .into(),
     );
     Some(out)

@@ -7,6 +7,9 @@ pub enum Target {
     Text(String),
     /// Replace from the start of `from` up to (not including) the first `to` after it.
     Range { from: String, to: String },
+    /// Insert `new` as whole lines before or after each line that contains `anchor`
+    /// (which may be any part of the line). Block format only.
+    Insert { anchor: String, after: bool },
 }
 
 pub struct Edit {
@@ -155,6 +158,15 @@ fn validate(edits: &[Edit]) -> Result<(), String> {
             Target::Text(old) if *old == e.new => {
                 return Err(format!(
                     "{label}: \"old\" and \"new\" are identical, so the edit would change nothing"
+                ));
+            }
+            Target::Insert { anchor, after } if anchor.trim().is_empty() => {
+                let which = if *after { "AFTER" } else { "BEFORE" };
+                return Err(format!("{label}: the {which} text is empty"));
+            }
+            Target::Insert { .. } if e.new.is_empty() => {
+                return Err(format!(
+                    "{label}: nothing to insert (the NEW part is empty)"
                 ));
             }
             Target::Range { from, to } if from.is_empty() || to.is_empty() => {
