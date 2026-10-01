@@ -173,8 +173,16 @@ EOF
   - 「複数行・複数箇所の置換: `rpatch`（stdin に区切り形式で渡す。書き方は `rpatch --help`）。python のヒアドキュメントで置換しない」
 - これより前に zatsudan のセッションで試用した分（絶対パスで呼んだもの）は、導入前として扱う。
 
+## リポジトリと要望の受け方（2026-10-01 から）
+
+- GitHub: https://github.com/lenalab-me/rpatch （private）。`main` を push している。
+- **やることと要望は Issue で管理する。** 開いている項目は `gh issue list --repo lenalab-me/rpatch` で見る。
+- 他のセッションで使ってもらうときは、気づいたことを 1 件ずつ `gh issue create --repo lenalab-me/rpatch` で起票してもらう。不具合は `bug`、要望は `enhancement` のラベルを付ける。
+- 直したコミットのメッセージには `Fixes #N` を書き、push で Issue を閉じる。
+- `docs/review-*.md` は、Issue にする前の経緯の記録として残す。
+
 ## 次のセッションでやること
 
-1. 普段の作業で使う（bypass モードを含む）。気になった出力や失敗はメモしておく
-2. 1〜2 日使ったら、`metrics.py` でベースラインと比べる。`--since 2026-10-01T05:22 --exclude-proj prod-rpatch` で、導入後だけを数える。区切り形式と JSON がそれぞれどれくらい使われるか、範囲置換が python の `s.index` を置き換えられているかも見る
+1. 普段の作業で使う（bypass モードを含む）。気になった出力や失敗は Issue にする
+2. 1〜2 日使ったら、効果を測る（#4）
 3. v1（tree-sitter での構文チェック）。比べた結果を見てから始める
