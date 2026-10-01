@@ -1,0 +1,20 @@
+{
+  "since": "2026-09-24",
+  "until": "2026-10-01T04:50",
+  "exclude_proj": [
+    "prod-rpatch"
+  ],
+  "sessions": 85,
+  "tool_calls": 3459,
+  "python_replace": 317,
+  "python_replace_unguarded": 113,
+  "python_replace_failed": 7,
+  "edit": 105,
+  "edit_same_file_consecutive": 34,
+  "edit_failed": 0,
+  "rpatch": 0,
+  "rpatch_failed": 0,
+  "replace_failed_total": 7,
+  "share_python_replace": 0.751,
+  "python_replace_per_1k_calls": 91.6
+}
