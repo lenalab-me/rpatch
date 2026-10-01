@@ -151,9 +151,16 @@ EOF
   - レビューは `docs/review-v0.1.0.md` と `docs/review-v0.2.0.md` に置いた。
 - 2026-10-01: 3 回目のコメント（残った問題は区切りの長さの食い違いだけ）を受けて v0.3.1 にした。ブロックの中で長さだけが違う区切りらしい行を覚えておき、ブロックが閉じないときや予期しない区切りがあるときに `hint: line 4 has ======== (8 characters), but this block's markers are 9 characters long` と示す。そういう行があるときは、長い区切りを勧めるヒントは出さない。
 
+## 導入（2026-10-01 14:22 JST = 05:22 UTC）
+
+- `cargo install --path .` で `~/.cargo/bin/rpatch`（v0.3.1）に入れた。コードを変えたら、もう一度 `cargo install --path .` を実行する。
+- `~/.claude/CLAUDE.md` の「CLI ツール」の節に、次の 1 行を足した（`sd` の行の次）。
+  - 「複数行・複数箇所の置換: `rpatch`（stdin に区切り形式で渡す。書き方は `rpatch --help`）。python のヒアドキュメントで置換しない」
+- これより前に zatsudan のセッションで試用した分（絶対パスで呼んだもの）は、導入前として扱う。
+
 ## 次のセッションでやること
 
-1. `cargo install --path .` で PATH に入れ、`~/.claude/CLAUDE.md` の「CLI ツール」の節に 1 行追加する。追加した日時を記録しておく（導入後の集計の `--since` に使う）
-2. bypass モードで実際の作業に使ってみる
-3. 何セッションか経ったら `metrics.py` でベースラインと比べる。区切り形式と JSON がそれぞれどれくらい使われるか、範囲置換が python の `s.index` を置き換えられているかも見る
+1. 普段の作業で使う（bypass モードを含む）。気になった出力や失敗はメモしておく
+2. 1〜2 日使ったら、`metrics.py` でベースラインと比べる。`--since 2026-10-01T05:22 --exclude-proj prod-rpatch` で、導入後だけを数える。区切り形式と JSON がそれぞれどれくらい使われるか、範囲置換が python の `s.index` を置き換えられているかも見る
+3. v1（tree-sitter での構文チェック）。比べた結果を見てから始める
 4. v1（tree-sitter での構文チェック）
