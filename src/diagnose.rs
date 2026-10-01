@@ -27,7 +27,12 @@ pub fn count_mismatch(
         out.push(format!("… and {} more", lines.len() - MAX_LOCATIONS));
     }
     let found = positions.len();
-    out.push(if field != "old" {
+    out.push(if field == "before" || field == "after" {
+        format!(
+            "hint: add text to \"{field}\" so that it matches once, or open the block with `<<<<<<< {} count={found}` to insert at every match",
+            field.to_uppercase()
+        )
+    } else if field != "old" {
         format!("hint: add surrounding text to \"{field}\" so that it matches once")
     } else if found > expected {
         format!(

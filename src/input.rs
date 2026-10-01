@@ -164,6 +164,13 @@ fn validate(edits: &[Edit]) -> Result<(), String> {
                 let which = if *after { "AFTER" } else { "BEFORE" };
                 return Err(format!("{label}: the {which} text is empty"));
             }
+            Target::Insert { anchor, after } if anchor.trim_end_matches('\n').contains('\n') => {
+                let which = if *after { "AFTER" } else { "BEFORE" };
+                return Err(format!(
+                    "{label}: the {which} text must be a single line (it has {}); one line, or part of one, is enough to find the place",
+                    anchor.lines().count()
+                ));
+            }
             Target::Insert { .. } if e.new.is_empty() => {
                 return Err(format!(
                     "{label}: nothing to insert (the NEW part is empty)"

@@ -51,6 +51,7 @@ JSON (stdin starting with `{`):
   {"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1},
              {"file": "path", "from": "start text", "to": "end text", "new": "..."}]}
   JSON texts are matched anywhere, not only at line starts.
+  BEFORE/AFTER exist only in the block format.
 
 Rules:
   - Matching is exact; whitespace is never matched loosely.

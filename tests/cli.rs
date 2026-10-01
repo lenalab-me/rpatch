@@ -1077,3 +1077,29 @@ fn unknown_flag_prints_a_short_usage() {
         .stderr(predicate::str::contains("rpatch --help"))
         .stderr(predicate::str::contains("Block format").not());
 }
+
+// --- v0.5.0 の確認メモ（docs/review-v0.5.0.md） -------------------------------------
+
+#[test]
+fn insert_anchor_must_be_a_single_line() {
+    let dir = setup(&[("a.txt", "a\nb long\nc\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< AFTER\nb long\nc\n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("must be a single line"));
+}
+
+#[test]
+fn insert_count_mismatch_suggests_count() {
+    let dir = setup(&[("a.md", "## A\n\n## B\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.md\n<<<<<<< AFTER\n## \n=======\nx\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("`<<<<<<< AFTER count=2`"));
+}
