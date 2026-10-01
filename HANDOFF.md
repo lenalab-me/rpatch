@@ -104,8 +104,17 @@ EOF
   - 置換に失敗してやり直したターン数
 - 導入するときは、`~/.claude/CLAUDE.md` の「CLI ツール」の節に 1 行追加する。CLAUDE.md への 1 行で grep が rg にほぼ全部置き換わったので、この入れ方で効くはず。
 
+## 進み具合
+
+- 2026-10-01: `git init` と `cargo init` を済ませ、v0 を実装した。テストは `tests/cli.rs`（28 件）と単体テスト 4 件で、Codex の 3 つの問題を含む。
+  - 失敗時のヒントは、次の順で最初に当てはまったものを 1 つ出す（`src/diagnose.rs`）。CRLF の違い → 空白の違い（該当行を表示）→ どこまで一致してどこで食い違うか → 一番似ている行。
+  - 読み取り専用のファイルが含まれていたら、何も書かずに終了コード 3 で終わる（rename だと書き込めてしまうので、事前に確かめている）。
+  - symlink はリンク先を書き換える。パーミッションは引き継ぐ。
+- clippy と rustfmt は入っていない（`rustup component add clippy rustfmt`）。
+
 ## 次のセッションでやること
 
-1. `git init` → `cargo init --name rpatch`
-2. v0 を実装し、上の Codex の 3 つの問題をテストとして先に書く
-3. bypass モードで実際の作業に使ってみる
+1. `cargo install --path .` で PATH に入れ、bypass モードで実際の作業に使ってみる
+2. JSON のエスケープがどれくらい負担かを見て、独自形式を受け付けるかどうか決める
+3. `~/.claude/CLAUDE.md` の「CLI ツール」の節に 1 行追加する
+4. v1（tree-sitter での構文チェック）
