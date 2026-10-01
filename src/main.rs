@@ -80,7 +80,8 @@ impl Report {
     fn error(&mut self, headline: String, details: Vec<String>) {
         self.failed = true;
         self.lines.push(format!("error: {headline}"));
-        self.lines.extend(details.into_iter().map(|d| format!("  {d}")));
+        self.lines
+            .extend(details.into_iter().map(|d| format!("  {d}")));
     }
 }
 
@@ -265,7 +266,11 @@ fn load_failure(e: &Edit, err: io::Error) -> LoadFailure {
         let cwd = std::env::current_dir()
             .map(|d| d.display().to_string())
             .unwrap_or_else(|_| "(unknown)".into());
-        ("file not found".to_string(), vec![format!("cwd: {cwd}")], false)
+        (
+            "file not found".to_string(),
+            vec![format!("cwd: {cwd}")],
+            false,
+        )
     } else {
         (format!("cannot read: {err}"), Vec::new(), true)
     };

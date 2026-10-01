@@ -78,12 +78,7 @@ fn whitespace_hint(content: &str, old: &str) -> Option<Vec<String>> {
     let ranges: Vec<(usize, usize)> = {
         let idx = LineIndex::new(content);
         hay.match_indices(&needle)
-            .map(|(i, _)| {
-                (
-                    idx.line_of(map[i]),
-                    idx.line_of(map[i + needle.len() - 1]),
-                )
-            })
+            .map(|(i, _)| (idx.line_of(map[i]), idx.line_of(map[i + needle.len() - 1])))
             .collect()
     };
     if ranges.is_empty() {
@@ -95,7 +90,11 @@ fn whitespace_hint(content: &str, old: &str) -> Option<Vec<String>> {
         "found with different whitespace (indentation, spacing or line breaks) at {}:",
         ranges
             .iter()
-            .map(|&(a, b)| if a == b { format!("line {a}") } else { format!("lines {a}-{b}") })
+            .map(|&(a, b)| if a == b {
+                format!("line {a}")
+            } else {
+                format!("lines {a}-{b}")
+            })
             .collect::<Vec<_>>()
             .join(", ")
     )];
@@ -104,7 +103,10 @@ fn whitespace_hint(content: &str, old: &str) -> Option<Vec<String>> {
         out.push(gutter(l, idx.line(content, l)));
     }
     if last >= first + MAX_BLOCK_LINES {
-        out.push(format!("… {} more lines", last + 1 - first - MAX_BLOCK_LINES));
+        out.push(format!(
+            "… {} more lines",
+            last + 1 - first - MAX_BLOCK_LINES
+        ));
     }
     out.push("hint: copy \"old\" exactly from the file; rpatch never matches loosely".into());
     Some(out)

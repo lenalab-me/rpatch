@@ -312,7 +312,10 @@ fn hint_shows_where_a_multiline_old_diverges() {
 
 #[test]
 fn hint_shows_closest_line_for_a_typo() {
-    let dir = setup(&[("a.py", "import os\nlet_total = compute(a, b)\nprint(total)\n")]);
+    let dir = setup(&[(
+        "a.py",
+        "import os\nlet_total = compute(a, b)\nprint(total)\n",
+    )]);
     rpatch(
         dir.path(),
         &[],
