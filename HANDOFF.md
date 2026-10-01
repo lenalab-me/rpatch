@@ -1,6 +1,6 @@
 # 引き継ぎ: rpatch（エージェント向けの一括置換 CLI）
 
-2026-10-01、`~/project/lab/zatsudan` のセッションから引き継いで始めた。いまは v0.7.0 で、`main` を GitHub に push している（「リポジトリと要望の受け方」を参照）。普段使いは CLI。MCP は Cargo feature `mcp` を付けたビルドだけで使える。以下の「何を作るか」〜「範囲外にしたもの」は始めたときの検討で、その後の変更は「進み具合」に書いている。
+2026-10-01、`~/project/lab/zatsudan` のセッションから引き継いで始めた。いまは v0.8.0 で、`main` を GitHub に push している（「リポジトリと要望の受け方」を参照）。普段使いは CLI。MCP は Cargo feature `mcp` を付けたビルドだけで使える。以下の「何を作るか」〜「範囲外にしたもの」は始めたときの検討で、その後の変更は「進み具合」に書いている。試用レビュー・実験の記録・集計の結果・CLI と MCP の比較実験の一式は、リポジトリの外の `~/project/prod/rpatch-notes/` に置いている（2026-10-02 から）。技術的な説明は `docs/design.md`（英語版 `docs/design.en.md`）と `llms.txt`。
 
 ## 何を作るか
 
@@ -88,7 +88,7 @@ EOF
 
 - バイナリ名は **`rpatch`**。`patch` は `/usr/bin/patch` とぶつかる。プロジェクトのフォルダも `~/project/prod/rpatch` に変更した。
 - 新しいファイルの作成や削除は、v0 では扱わない（`cat > file <<EOF` で足りている）。`old` が空ならエラーにする。
-- 2026-10-01、試用レビュー（`docs/review-v0.1.0.md`）を受けて、次のように決めた。
+- 2026-10-01、試用レビュー（`~/project/prod/rpatch-notes/docs/review-v0.1.0.md`）を受けて、次のように決めた。
   - **区切り形式の入力を受け付ける**（aider の SEARCH/REPLACE に近い形）。JSON も残し、先頭の文字が `{` かどうかで判別する。根拠は、python での置換 342 回のうち 195 回が `'''` の複数行文字列だったこと。
     - 行単位で扱う。ブロックの各行に改行が付いているとみなし、照合は行の先頭からに限る（行の途中に一致させると、インデントが崩れるため）。例外として、ファイルの最終行に改行がない場合は、末尾の改行を外して照合する。
     - ファイルが CRLF なら、ブロックの改行も CRLF に合わせる。
@@ -141,7 +141,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 残っていること（上ほど優先）:
 
 1. ~~**新しいセッションで、Claude Code から `mcp__rpatch__rpatch` を実際に使えるか確かめる。**~~ 済み（下の「進み具合」を参照）。
-2. ~~**`bench/compare_metrics.py:78-80` の失敗判定。**~~ 済み。Codex で照合の失敗を起こして確かめ、`status` だけで判定するようにした（下の「進み具合」を参照）。
+2. ~~**`~/project/prod/rpatch-notes/bench-compare/compare_metrics.py:78-80` の失敗判定。**~~ 済み。Codex で照合の失敗を起こして確かめ、`status` だけで判定するようにした（下の「進み具合」を参照）。
 3. ~~**コミットを分ける。**~~ 済み（下の「進み具合」を参照）。`main` に直接積んだ。push はまだしていない。
 4. **CI（`.github/workflows/build.yml`）はまだ一度も動かしていない。** Windows は手元で検証していない。Windows では `canonicalize` すると `--cwd` が `\\?\C:\...` の形になり、instructions や `cwd:` の表示にそのまま出る。動作は Rust の `PathBuf::push` の正規化でおそらく大丈夫。表示が気になるなら `dunce` を使う。
    - 2026-10-01: 手動起動（`workflow_dispatch`）だけにした。push では動かない。private リポジトリでは macOS のランナーが 10 倍、Windows が 2 倍の分数を消費するため。配布用のバイナリが要るときに `gh workflow run build.yml` で動かす。
@@ -151,7 +151,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
    - ~~release バイナリは rmcp と tokio のぶん 4.0MB ある。~~ 済み。`mcp` を Cargo feature（既定ではオフ）にした。featureなしの release は 0.8MB。
    - ~~CLI がファイルを読む前に `current_dir()` を解決するようになった。~~ 済み。解決できなければ `.` で続けるので、入力の誤りは 2 のまま。
    - ~~`src/help.txt` の「See docs/mcp.md」は、バイナリだけ持っている人には辿れない。~~ 済み。参照をやめ、ツールの引数を help に書いた。
-   - ~~`docs/mcp.md` の Codex での確認記録を `docs/mcp-experiment.md` に移す。~~ 済み。リンク先の `learn.chatgpt.com/docs/extend/mcp` は実在した（「Model Context Protocol」）。
+   - ~~`docs/mcp.md` の Codex での確認記録を `~/project/prod/rpatch-notes/docs/mcp-experiment.md` に移す。~~ 済み。リンク先の `learn.chatgpt.com/docs/extend/mcp` は実在した（「Model Context Protocol」）。
    - ~~HANDOFF の冒頭が古いままになっている。~~ 済み。
    - ~~絶対パスを編集すると、diff の見出しが `--- a//tmp/x.txt` と二重スラッシュになる。~~ 済み。絶対パスでは `a/` `b/` を付けない。
 
@@ -161,12 +161,18 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 - ZDOTDIR固定後のCodex比較を実行済み。CLI 0.159.2／gpt-6.1-sol／rpatch 0.7.0、2課題×3試行×2条件の12実行がすべて正常終了・独立検証成功。有効ペア6件、CLI混入0件。
 - 自発的なrpatch使用はCLI条件6/6、MCP条件2/6。編集呼び出しはCLI条件rpatch 7回、MCP条件rpatch 2回＋apply_patch 5回。MCPの使用は文章編集の2・3回目で、設定変更は3回ともapply_patchだった。
 - 同じ隔離設定の別セッションでも、CLIが見つからないことと、明示指定したMCPのdry-run成功を確認した。これは自発的使用の集計には含めていない。
-- 結果は `docs/mcp-experiment.md` と `~/project/prod/rpatch-notes/bench-results/codex-20261001-zdotdir.json`。生ログ・作業コピー・接続確認・要件確認は `bench/out/codex-compare-20261001-zdotdir/`。12課題のテスト成功、12課題コミット、全6コピーのREADME要件・clean状態も確認済み。
+- 結果は `~/project/prod/rpatch-notes/docs/mcp-experiment.md` と `~/project/prod/rpatch-notes/bench-results/codex-20261001-zdotdir.json`。生ログ・作業コピー・接続確認・要件確認は `~/project/prod/rpatch-notes/bench-compare/out/codex-compare-20261001-zdotdir/`。12課題のテスト成功、12課題コミット、全6コピーのREADME要件・clean状態も確認済み。
 - この結果は1モデル・2課題・3試行で、CLIの短い案内とMCPツール説明の提示差を含む。次に比較を広げるなら、提示情報を揃えた条件と別の編集課題を追加する。モデルを変える場合は別の実験として記録する。
 - Codex同梱のrgが `--version` でも停止し、検索がタイムアウトした実行があるため、今回の所要時間から速度を比較しない。時間を比較する前に検索ツールの停止を切り分ける。
 - 既存のソース・接続手順・実験スクリプトの未コミット変更はそのまま残した。この再開では結果JSONと記録を追加・更新した。比較と接続確認のプロセスは終了済み。
 
 ## 進み具合
+
+- 2026-10-02: リポジトリを整理した。
+  - リポジトリの外（`~/project/prod/rpatch-notes/`）へ移した: 試用レビューとメモ（`review.md` は `docs/review-v0.3.0.md` として）、`docs/trial-notes-v0.2.0.md`、`docs/mcp-experiment.md`（→ `docs/`）、CLI と MCP の比較実験の一式（`bench/compare*.sh`、`compare_metrics.py` とそのテスト、`codex_overrides.py`、`compare-prompts/`、`fixtures/`、`verify-sample.mjs`、比較の生ログ → `bench-compare/`）。HANDOFF のパスも書き換えた。`bench/run.sh` と `bench/prompts/` は、採用の測り直しに使えるので残した。
+  - 技術文書を書いた: `docs/design.md`（日本語）と `docs/design.en.md`（英語、LLM 向け）。処理の流れ、モジュール、編集の種類ごとの照合の規則、診断、at_lines、終了コード、範囲外にしたもの、テスト。書いた挙動（終了コード、改行のない最終行）は実際に動かして確かめた。
+  - `llms.txt`（英語）を足した。使い方の例・主な規則・文書へのリンク。例はそのまま動くことを確かめた。
+  - README を直した（MCP の説明を短くし、文書へのリンクを足した）。HANDOFF の同じ行の重複も 1 つ消した。
 
 - 2026-10-02: `--help` から MCP の節を消した（全体 67 行）。MCP の登録を外し、手元も MCP なしのビルドにしたので、全文を読んだエージェントが `rpatch mcp` に寄り道しないように。MCP の使い方は `docs/mcp.md` と、MCP 入りのビルドの `rpatch mcp --help` に残っている。
 
@@ -209,7 +215,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
   - 絶対パスの diff の見出しに `a/` `b/` を付けない（`--- /tmp/x.txt`）。
   - cwd が削除されていても、入力の誤りは終了コード 2 のまま（`current_dir()` が失敗したら `.` で続ける）。
   - MCP の `diff` の既定を `false` にして、CLI と揃えた。ツール説明・help・`docs/mcp.md` も直した。
-  - `docs/mcp.md` の並行処理の説明を「同時には処理しない。届いた順とは限らない」に直した。接続確認の記録は `docs/mcp-experiment.md` の「接続確認（2026-10-01）」に移した。
+  - `docs/mcp.md` の並行処理の説明を「同時には処理しない。届いた順とは限らない」に直した。接続確認の記録は `~/project/prod/rpatch-notes/docs/mcp-experiment.md` の「接続確認（2026-10-01）」に移した。
   - CLI テストを 2 件足した（絶対パスの見出し、削除された cwd）。
 
 - 2026-10-01: 未コミットだった変更をコミットに分け、MCP を Cargo feature にした。`main` に 6 コミット積んだ（最後はこの HANDOFF の更新。push はしていない）。
@@ -219,12 +225,11 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
   - `cargo install --locked --path . --features mcp` で入れ直し、`~/.cargo/bin/rpatch` で MCP の initialize と dry-run の tools/call が返ることを確かめた。
   - 作業中に `src/mcp.rs`（未コミットだった）を誤って上書きして失われた。Claude Code のセッション記録（読み出し結果と Sonnet の編集内容）から作り直した。行数（103）と、テスト（MCP 8 件）・clippy が通ることで確かめたが、元のファイルとのバイト単位の照合はできていない。
 
-- 2026-10-01: `bench/compare_metrics.py` の Codex の MCP 失敗判定を直した。
-- 2026-10-01: `bench/compare_metrics.py` の Codex の MCP 失敗判定を直した。
+- 2026-10-01: `~/project/prod/rpatch-notes/bench-compare/compare_metrics.py` の Codex の MCP 失敗判定を直した。
   - 修正版のバイナリで Codex（CLI 0.159.2／gpt-6.1-sol、`--ignore-user-config`、rpatch の MCP だけを渡す）に照合の失敗を 1 回起こした。ログは `status: "failed"`、`structured_content: null`、本文は CLI の stderr と同じ診断だった。`isError` だけで `failed` になる。修正前のバイナリの smoke ログでも失敗は `failed` だったので、これまでの集計結果は変わらない。
   - そこで `structured_content.exit_code` を見るのをやめ、`status` と `error` だけで判定する。テストデータも実際の形に合わせた。集計テスト 5 件が通る。
   - 1 回目の試行で、Codex は引数名を `input` ではなく `patch` にして呼んだ（`failed to deserialize parameters: unknown field 'patch'`）。プロンプトで `input` を指定すると正しく呼べた。ツール説明の書き出しで引数名が目立っていない可能性がある。1 回だけなので傾向かどうかは分からない。
-  - ログは `bench/out/codex-mcp-fail-20261001/`（`events-1-wrong-arg.jsonl` が 1 回目）。
+  - ログは `~/project/prod/rpatch-notes/bench-compare/out/codex-mcp-fail-20261001/`（`events-1-wrong-arg.jsonl` が 1 回目）。
 
 - 2026-10-01: Claude Code（CLI、Opus）の新しいセッションで `mcp__rpatch__rpatch` を確かめた。`claude mcp get rpatch` は Connected。一時ファイルへの dry-run、本適用、照合の失敗（`"old" not found` と一番似ている行、`rpatch: nothing written`、ツール結果はエラー扱い）の 3 つが期待どおりだった。相対パス（`Cargo.toml`）はプロジェクトのディレクトリを基準に解決された。この HANDOFF の更新も MCP で行った。
 
@@ -233,46 +238,46 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 - 2026-10-01: デスクトップアプリの新セッションでrpatch MCPを認識し、CodexのCLI／MCP比較を再開・完了した。
   - MCPのdry-run、本適用、不一致診断に成功。同じ隔離設定での明示指定による接続確認も成功した。
   - 2課題・各条件3回の12実行はすべて検証成功、有効ペア6件。CLIの自発的使用6/6、MCP 2/6。編集失敗・CLI混入は0件。
-  - `~/project/prod/rpatch-notes/bench-results/codex-20261001-zdotdir.json`（当時は `bench/results/`）と `docs/mcp-experiment.md` に結果を保存。全6作業コピーのREADME要件、テスト成功、課題コミットも確認した。
+  - `~/project/prod/rpatch-notes/bench-results/codex-20261001-zdotdir.json`（当時は `bench/results/`）と `~/project/prod/rpatch-notes/docs/mcp-experiment.md` に結果を保存。全6作業コピーのREADME要件、テスト成功、課題コミットも確認した。
   - releaseビルド、集計テスト5件、比較スクリプトのshellcheckが通った。所要時間にはCodex同梱rgの停止の影響があるため、速度の比較には使わない。
 
 - 2026-10-01: Codex側の登録と接続確認を追加した。
   - `cargo install --locked --path .` で手元のrpatchを0.7.0に更新し、`codex mcp add rpatch -- /Users/you/.cargo/bin/rpatch mcp` で登録済み。cwdは固定しない。
   - 新しいCodexセッション（CLI 0.159.2／gpt-6.1-sol）から `mcp__rpatch__rpatch` のdry-run、本適用、不一致診断の3回を確認した。実際のsample.txtの変更も確認済み。既存のアプリセッションはMCP設定の再読込が必要。
-  - `bench/compare-codex.sh` とCodex JSONL集計を追加した。集計テスト5件とshellcheckが通った。
-  - 自発的な使用の試行は両条件ともCLIを使用し、独立検証に成功。ただしMCP条件にもCLIが見えていたので、排他的な比較から除外。集計の `cli_contamination` で検出し、次回用にZDOTDIRを固定した。生ログは `bench/out/codex-compare-20261001-fixed/`。
+  - `~/project/prod/rpatch-notes/bench-compare/compare-codex.sh` とCodex JSONL集計を追加した。集計テスト5件とshellcheckが通った。
+  - 自発的な使用の試行は両条件ともCLIを使用し、独立検証に成功。ただしMCP条件にもCLIが見えていたので、排他的な比較から除外。集計の `cli_contamination` で検出し、次回用にZDOTDIRを固定した。生ログは `~/project/prod/rpatch-notes/bench-compare/out/codex-compare-20261001-fixed/`。
 
 - 2026-10-01: ローカルMCPを追加してv0.7.0にした。
   - `rpatch mcp [--cwd <directory>]` でstdioサーバーを起動する。ツールは `rpatch` の1つで、引数は `input`、`diff`（既定true）、`dry_run`（既定false）。
   - 編集処理を `src/lib.rs` に移し、CLIとMCPで共有した。差分・診断はCLIと同じ文面。MCPの結果には `isError` と `structuredContent` の終了コード・stdout・stderrを付ける。
   - サーバー内の編集要求を直列化し、キャンセル後も実行中の編集が終わるまで次を待たせる。cwdは明示的に渡し、プロセス全体の作業ディレクトリは変えない。
   - Rustのテスト98件（既存90＋MCP接続8）、集計テスト3件、fmt／clippy／shellcheckが通った。Apple Siliconでreleaseビルド済み。Windows x64／Intel Mac／Apple Siliconのテストとビルドを `.github/workflows/build.yml` に追加したが、CI自体は未実行。
-  - ビルド・接続は `docs/mcp.md`。比較実験は `bench/compare.sh` と `docs/mcp-experiment.md`。既存の普段使いの指示を除き、同じseed・課題で自由にツールを選ばせる。
-  - 短い比較試行ではClaude CodeからMCPへの接続成功を確認。ただし両条件ともセッション上限（429）で作業前に終了したので、有効な比較結果はまだない。生ログは `bench/out/compare-20261001-171214/`（gitignore対象）。
+  - ビルド・接続は `docs/mcp.md`。比較実験は `~/project/prod/rpatch-notes/bench-compare/compare.sh` と `~/project/prod/rpatch-notes/docs/mcp-experiment.md`。既存の普段使いの指示を除き、同じseed・課題で自由にツールを選ばせる。
+  - 短い比較試行ではClaude CodeからMCPへの接続成功を確認。ただし両条件ともセッション上限（429）で作業前に終了したので、有効な比較結果はまだない。生ログは `~/project/prod/rpatch-notes/bench-compare/out/compare-20261001-171214/`（gitignore対象）。
 
 - 2026-10-01: `git init` と `cargo init` を済ませ、v0 を実装した。テストは `tests/cli.rs`（28 件）と単体テスト 4 件で、Codex の 3 つの問題を含む。
   - 失敗時のヒントは、次の順で最初に当てはまったものを 1 つ出す（`src/diagnose.rs`）。CRLF の違い → 空白の違い（該当行を表示）→ どこまで一致してどこで食い違うか → 一番似ている行。
   - 読み取り専用のファイルが含まれていたら、何も書かずに終了コード 3 で終わる（rename だと書き込めてしまうので、事前に確かめている）。
   - symlink はリンク先を書き換える。パーミッションは引き継ぐ。
 - 2026-10-01: clippy と rustfmt を入れた。clippy の指摘はなく、rustfmt で整形した。導入前のベースラインを取った（「効果の測り方」を参照）。
-- 2026-10-01: zatsudan のセッションで試用レビューを受けた（`docs/review-v0.1.0.md`）。それを受けて v0.2.0 を実装した（中身は「決めたこと」を参照）。テストは結合テスト 47 件と単体テスト 5 件。
+- 2026-10-01: zatsudan のセッションで試用レビューを受けた（`~/project/prod/rpatch-notes/docs/review-v0.1.0.md`）。それを受けて v0.2.0 を実装した（中身は「決めたこと」を参照）。テストは結合テスト 47 件と単体テスト 5 件。
   - 区切り形式の入力（`src/block.rs`）。照合は `src/matcher.rs` にまとめた。
   - アンカー間の範囲置換（JSON の `from`/`to`、区切り形式の `<<<<<<< FROM` / `<<<<<<< TO`）。成功したときは `edits[0] replaced lines 2-4 (3 lines) with 1 line` のように範囲を示す。
   - JSON の構文エラーでは、該当箇所の前後とキャレット、`\'` や生の改行についてのヒントを出す。
   - `old == new` は終了コード 2 にした。
   - このセッションの後半の編集は rpatch 自身（区切り形式）で行った。4 ファイル・7 箇所（範囲置換 1 つを含む）を 1 回で当てられた。
-- 2026-10-01: 2 回目の試用レビュー（`docs/review-v0.2.0.md`）を受けて v0.3.0 にした。レビューの結論は「このまま普段の作業で使い始めていい」。テストは結合テスト 55 件と単体テスト 5 件。
+- 2026-10-01: 2 回目の試用レビュー（`~/project/prod/rpatch-notes/docs/review-v0.2.0.md`）を受けて v0.3.0 にした。レビューの結論は「このまま普段の作業で使い始めていい」。テストは結合テスト 55 件と単体テスト 5 件。
   - TO が見つからないときは、似た箇所を FROM より後ろだけから探す。ラベルも `"to"` にした（それまでは `"old"` で、FROM の行を指していた）。
   - ブロックの中身が行の一部としてだけ見つかるときは、「空白違い」ではなく `found only as part of a line` と出す。インデントの省略も、行の先頭だけ書いた場合（`**Why:**` など）も、これにまとめた。
   - 長い区切り（上の「決めたこと」を参照）。rpatch 自身の `--help` の文面を、9 文字の区切りで編集できた。
   - 区切りの書き間違いには、`hint: missing >>>>>>> NEW before line 6?` のような 1 行のヒントを出す。エラーには、その部分の開始行（NEW なら `=======` の行）を出す。
-  - レビューは `docs/review-v0.1.0.md` と `docs/review-v0.2.0.md` に置いた。
+  - レビューは `~/project/prod/rpatch-notes/docs/review-v0.1.0.md` と `~/project/prod/rpatch-notes/docs/review-v0.2.0.md` に置いた。
 - 2026-10-01: 3 回目のコメント（残った問題は区切りの長さの食い違いだけ）を受けて v0.3.1 にした。ブロックの中で長さだけが違う区切りらしい行を覚えておき、ブロックが閉じないときや予期しない区切りがあるときに `hint: line 4 has ======== (8 characters), but this block's markers are 9 characters long` と示す。そういう行があるときは、長い区切りを勧めるヒントは出さない。
 - 2026-10-01: 4 回目のコメント（導入後の初使用）を受けて v0.4.0 にした。
   - 成功時の `lines=` は「NEW の先頭の行番号」だったが、ファイル全体の行数と読み違えられた（末尾への追記で、たまたま一致した）。`at_lines=3,10-12` に改め、実際に変わった行の範囲を出す。OLD と NEW で先頭・末尾が同じ行（文脈として書いた行）は数えない。削除は、消した位置の行番号を出す。`--help` に出力の読み方を書いた。
   - **範囲置換で、NEW の末尾が TO と同じなら失敗にする**（終了コード 1）。TO は残るので、NEW の末尾にも書くと 2 回出てくる。v0.4.0 を作る途中で、私（Claude）がこの間違いを 3 回した。範囲の表示（`replaced lines 500-518 …`）は正しかったが、見落とした。警告だけでは足りないと判断した。TO を本当に 2 回並べたいときは、OLD で書く。
   - 同じ作業中に、FROM に行の一部だけを書く間違いも 2 回した。どちらも v0.3.0 で直した診断（`found only as part of a line`）で、すぐ原因が分かった。
-- 2026-10-01: beat-jam での実際の作業で 9 回使ったメモ（`docs/review-v0.4.1.md`）を受けて v0.5.0 にした。
+- 2026-10-01: beat-jam での実際の作業で 9 回使ったメモ（`~/project/prod/rpatch-notes/docs/review-v0.4.1.md`）を受けて v0.5.0 にした。
   - 一番効いたのは FROM/TO（関数の中身を、両端の 1 行ずつで書き換えられる）。一番多い失敗は「長い 1 行の先頭だけを OLD に書く」（同じ日に 2 回）。9 回のうち 4 回は「既存の行の前後に足すだけ」だった。
   - **`<<<<<<< BEFORE` / `<<<<<<< AFTER` を追加した。** アンカーは行の一部でよい（行の境目に挿入するだけで、既存の行は書き換えないので安全）。アンカーはちょうど `count` 回（既定 1）マッチしなければ失敗にする。同じ行で 2 回マッチしたら失敗にする。区切り形式だけで、JSON にはない（JSON は `old`/`new` で書ける）。
   - 「行の一部としてだけ見つかった」の診断で、BEFORE/AFTER を案内する。
@@ -280,7 +285,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
   - 見送り: `OLD partial`（行の一部の書き換え）。挿入は BEFORE/AFTER で済み、書き換えは JSON で書ける。
     - 2026-10-02 に覆した（v0.8.0 で `<<<<<<< OLD part` を入れた。「進み具合」の 2026-10-02 の項を参照）。
   - メモ: Claude Code の Edit ツールで編集するファイルを rpatch でも書き換えると、Edit の前に読み直しが要る（ハーネス側の挙動）。1 つのファイルにはどちらか片方を使うほうが手間が少ない。
-- 2026-10-01: v0.5.0 の確認メモ（`docs/review-v0.5.0.md`）を受けて v0.5.1 にした。要望の 4 つはどれも期待どおりだった。
+- 2026-10-01: v0.5.0 の確認メモ（`~/project/prod/rpatch-notes/docs/review-v0.5.0.md`）を受けて v0.5.1 にした。要望の 4 つはどれも期待どおりだった。
   - BEFORE/AFTER のアンカーは 1 行だけにした（2 行以上は終了コード 2）。それまでは 1 行目が行の一部だと、2 行をつないだ文字列が見つからず、`no similar text found` と出て戸惑わせていた。
   - アンカーが複数に当たったときのヒントで、`<<<<<<< AFTER count=N`（全部に入れる）も示す。
   - `--help` の JSON の節に「BEFORE/AFTER は区切り形式だけ」と書いた。

@@ -1,0 +1,42 @@
+# rpatch
+
+> rpatch edits existing UTF-8 files by exact match, many edits across many files in one call, all or nothing. It replaces whole lines (OLD), part of a line (OLD part) or a range (FROM/TO), or inserts lines (BEFORE/AFTER). The input is a block format read from stdin, so nothing needs escaping. When an edit does not match, nothing is written and the error shows line numbers and the likely cause.
+
+Run `rpatch --help`; its first 40 lines cover everything needed to use it.
+
+```sh
+rpatch <<'EOF' && git diff --stat
+=== path/to/file
+<<<<<<< OLD
+whole lines to replace, copied exactly (indentation included)
+=======
+replacement lines (empty to delete them)
+>>>>>>> NEW
+<<<<<<< OLD part
+part of a line
+=======
+its replacement
+>>>>>>> NEW
+=== another/file
+<<<<<<< AFTER
+any part of the line to insert after
+=======
+inserted lines
+>>>>>>> NEW
+EOF
+```
+
+Key rules:
+
+- OLD matches whole lines only, at line starts. For part of a line, use `<<<<<<< OLD part`.
+- Each text must match exactly once (or `count=N` times, as in `<<<<<<< OLD count=2`). Overlapping matches are an error.
+- Edits to one file apply in order; each sees the result of the previous one.
+- Quote the heredoc delimiter (`<<'EOF'`). Chain follow-up commands on the opener line (`rpatch <<'EOF' && …`); a command on a line after the closing EOF runs even when the edit failed.
+- Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input, 3 I/O error.
+- rpatch does not create or delete files and has no regular expressions.
+
+## Docs
+
+- [Design](docs/design.en.md): the processing flow, matching rules for each kind of edit, diagnostics, writing, and exit status.
+- [Help text](src/help.txt): the same text as `rpatch --help`.
+- [MCP server](docs/mcp.md): optional, behind the Cargo feature `mcp` (Japanese).

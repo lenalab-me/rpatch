@@ -14,15 +14,12 @@ const value = 2;
 EOF_INPUT
 ```
 
-`--dry-run` で確認だけできる。JSONの部分文字列置換、FROM/TOの範囲置換、BEFORE/AFTERの行挿入にも対応。入力形式の詳細は `rpatch --help`。
+`--dry-run` で確認だけできる。行の一部の置換（`OLD part`）、FROM/TOの範囲置換、BEFORE/AFTERの行挿入、JSONの入力にも対応。入力形式の詳細は `rpatch --help`。
 
-MCPサーバーはCargo feature `mcp`（既定ではオフ）に入っている。使うには `cargo install --locked --path . --features mcp` （ビルドなら `cargo build --locked --release --features mcp`）で入れる。
+入れ方は `cargo install --locked --path .`。MCPサーバーはCargo feature `mcp`（既定ではオフ）に入っていて、使うときだけ `--features mcp` を付ける。
 
-```sh
-rpatch mcp --cwd /absolute/path/to/project
-```
-
-- [MCPツール、Windows／Macのビルド・接続手順](docs/mcp.md)
-- [CLI／MCPの自発的な使用を比較する実験](docs/mcp-experiment.md)
+- [設計](docs/design.md)（[English](docs/design.en.md)）: 処理の流れ、照合の規則、診断、書き込み、終了コード
+- [llms.txt](llms.txt): LLM 向けの入口（英語）
+- [MCPサーバー](docs/mcp.md): Windows／Macのビルド・接続手順
 
 照合中の失敗は全ファイルを変更せずに終了する。書き込みはファイルごとの一時ファイル＋renameで行い、途中で失敗した場合はそれまでの変更を戻す。ロールバック自体が失敗したときは残ったファイルを報告する。プロセス停止や他プロセスの同時編集に対するトランザクションは提供しない。

@@ -784,7 +784,7 @@ fn range_rejects_count_and_old() {
     .code(2);
 }
 
-// --- v0.2.0 の試用レビュー（docs/review-v0.2.0.md）への対応 ---------------------
+// --- v0.2.0 の試用レビューへの対応 ---------------------
 
 /// レビューの 3.: TO が見つからないとき、似た箇所は FROM より後ろから探し、ラベルは "to" にする。
 #[test]
@@ -976,7 +976,7 @@ fn range_rejects_new_ending_with_the_kept_to() {
     assert_eq!(read(&dir, "a.rs"), original);
 }
 
-// --- v0.4.1 の試用メモ（docs/review-v0.4.1.md）: BEFORE / AFTER など ---------------
+// --- v0.4.1 の試用メモ: BEFORE / AFTER など ---------------
 
 const PARA: &str =
     "# plan\nThis is a very long paragraph that goes on and on, written as one line.\nnext\n";
@@ -1108,7 +1108,7 @@ fn unknown_flag_prints_a_short_usage() {
         .stderr(predicate::str::contains("Block format").not());
 }
 
-// --- v0.5.0 の確認メモ（docs/review-v0.5.0.md） -------------------------------------
+// --- v0.5.0 の確認メモ -------------------------------------
 
 #[test]
 fn insert_anchor_must_be_a_single_line() {
