@@ -57,7 +57,8 @@ Rules:
 Output:
   One line per file: `M <file>  edits=<n>  at_lines=3,10-12`. at_lines are the lines
   of the edited file that changed; lines that OLD and NEW share at the start or end
-  are not counted, and a deletion shows the line where it happened. A range edit also
+  are not counted. A deletion shows the line that now sits where the deleted lines
+  were, or the last line if the end of the file was deleted. A range edit also
   prints which lines it replaced. Errors go to stderr, and nothing is written.
 
 Options:
