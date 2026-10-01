@@ -12,6 +12,8 @@ GUARD = re.compile(r'\bassert\b|\braise\b|\.count\(')
 PY_FAIL = re.compile(r'Traceback|AssertionError')
 # コマンドの先頭で呼んでいるものだけ（`cd .../rpatch` や `for n in rpatch ...` は数えない）
 RPATCH = re.compile(r'(^|[;&|(\n])\s*(\S*/)?rpatch(\s|$)')
+# dry run は、失敗するケースをわざと試すのにも使われるので、本番の失敗と分けて数える
+RPATCH_DRY_RUN = re.compile(r'\brpatch\b[^\n]*\s(-n|--dry-run)\b')
 EDIT_MISMATCH = re.compile(r'String to replace not found|Found \d+ matches')
 
 
@@ -50,8 +52,13 @@ def main():
                         n['python_replace_failed'] += 1
                 if RPATCH.search(cmd):
                     n['rpatch'] += 1
+                    dry = bool(RPATCH_DRY_RUN.search(cmd))
+                    if dry:
+                        n['rpatch_dry_run'] += 1
                     if 'nothing written' in res:
                         n['rpatch_failed'] += 1
+                        if not dry:
+                            n['rpatch_failed_real'] += 1
             if tool in ('Edit', 'MultiEdit'):
                 n['edit'] += 1
                 f = inp.get('file_path')
@@ -70,7 +77,8 @@ def main():
         'sessions': len(sessions),
         **{k: n[k] for k in [
             'tool_calls', 'python_replace', 'python_replace_unguarded', 'python_replace_failed',
-            'edit', 'edit_same_file_consecutive', 'edit_failed', 'rpatch', 'rpatch_failed',
+            'edit', 'edit_same_file_consecutive', 'edit_failed',
+            'rpatch', 'rpatch_dry_run', 'rpatch_failed', 'rpatch_failed_real',
         ]},
         'replace_failed_total': n['python_replace_failed'] + n['edit_failed'] + n['rpatch_failed'],
         'share_python_replace': round(n['python_replace'] / edits, 3) if edits else None,
