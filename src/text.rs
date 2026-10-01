@@ -23,10 +23,21 @@ impl LineIndex {
 }
 
 const MAX_SHOWN: usize = 200;
+/// Lines shown so they can be copied back into OLD; only minified-size lines are cut.
+const MAX_COPYABLE: usize = 4000;
 
 /// A line prefixed with a right-aligned label, e.g. `    42 | text`.
 pub fn gutter(label: impl std::fmt::Display, text: &str) -> String {
-    let text = match text.char_indices().nth(MAX_SHOWN) {
+    gutter_up_to(label, text, MAX_SHOWN)
+}
+
+/// Like `gutter`, but long enough to copy the whole line in all but extreme cases.
+pub fn gutter_copyable(label: impl std::fmt::Display, text: &str) -> String {
+    gutter_up_to(label, text, MAX_COPYABLE)
+}
+
+fn gutter_up_to(label: impl std::fmt::Display, text: &str, max: usize) -> String {
+    let text = match text.char_indices().nth(max) {
         Some((i, _)) => format!("{}…", &text[..i]),
         None => text.to_string(),
     };

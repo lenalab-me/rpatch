@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use crate::diagnose;
 use crate::input::{Edit, Target};
-use crate::text::{LineIndex, gutter, line_list};
+use crate::text::{LineIndex, gutter, gutter_copyable, line_list};
 
 /// `content[start..end]` is to be replaced with `new`.
 pub struct Span {
@@ -313,7 +313,8 @@ fn partial_line(content: &str, needle: &str, start: usize, field: &str) -> Optio
         out.push(format!(
             "{name} line 1 is only the end of line {l} (text at the start of the line, such as indentation, is missing):"
         ));
-        out.push(gutter(l, idx.line(content, l)));
+        // The whole line, untruncated: the usual fix is to copy it into OLD.
+        out.push(gutter_copyable(l, idx.line(content, l)));
     }
     if cut_end {
         let l = idx.line_of(end);
@@ -321,7 +322,7 @@ fn partial_line(content: &str, needle: &str, start: usize, field: &str) -> Optio
             "{name} line {} is only the start of line {l}:",
             text.lines().count()
         ));
-        out.push(gutter(l, idx.line(content, l)));
+        out.push(gutter_copyable(l, idx.line(content, l)));
     }
     if loose.len() > 1 {
         let mut others: Vec<usize> = loose[1..].iter().map(|&q| idx.line_of(q)).collect();

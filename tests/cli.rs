@@ -1199,6 +1199,41 @@ fn partial_last_line_of_multiline_old_is_named() {
     ));
 }
 
+/// #16: 行の一部としてだけ見つかったら、長い行でも切らずに出す（そのまま OLD にコピーできるように）。
+#[test]
+fn partial_line_shows_long_lines_whole() {
+    let long = format!("- {} end of the line", "長い説明が続く。".repeat(60));
+    let dir = setup(&[("a.md", &format!("{long}\nnext\n"))]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.md\n<<<<<<< OLD\n- 長い説明が続く。\n=======\nX\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "OLD line 1 is only the start of line 1",
+    ))
+    .stderr(predicate::str::contains(format!("1 | {long}\n")));
+    assert_eq!(read(&dir, "a.md"), format!("{long}\nnext\n"));
+}
+
+/// 極端に長い行（4000 文字超）だけは切る。
+#[test]
+fn partial_line_cuts_only_extreme_lines() {
+    let long = format!("start {}", "x".repeat(5000));
+    let dir = setup(&[("a.js", &format!("{long}\n"))]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.js\n<<<<<<< OLD\nstart\n=======\nX\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(format!(
+        "1 | {}…\n",
+        &long[..4000]
+    )));
+}
+
 #[test]
 fn partial_first_line_names_missing_leading_text() {
     let dir = setup(&[("f.rs", "fn f() {\n    foo();\n}\n")]);
