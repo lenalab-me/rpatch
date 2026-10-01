@@ -1,10 +1,14 @@
+mod mcp;
+
 use std::io::{self, IsTerminal, Read};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use rpatch::PatchOptions;
 
 const USAGE: &str = include_str!("help.txt");
 const SHORT_USAGE: &str = "usage: rpatch [--diff] [--dry-run] <<'EOF' ... EOF   (see `rpatch --help` for the input format)";
+const MCP_USAGE: &str = "usage: rpatch mcp [--cwd <directory>]\nRuns a local MCP server over stdin/stdout. Relative edit paths use --cwd (default: current directory).";
 
 fn main() -> ExitCode {
     match run() {
@@ -15,6 +19,9 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), u8> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "mcp") {
+        return run_mcp(&args[1..]);
+    }
     let Some(opts) = parse_args(&args)? else {
         return Ok(());
     };
@@ -65,4 +72,47 @@ fn parse_args(args: &[String]) -> Result<Option<PatchOptions>, u8> {
         }
     }
     Ok(Some(opts))
+}
+
+fn run_mcp(args: &[String]) -> Result<(), u8> {
+    let mut cwd = None;
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--cwd" => {
+                cwd = Some(PathBuf::from(args.next().ok_or_else(|| {
+                    eprintln!("rpatch: --cwd needs a directory\n{MCP_USAGE}");
+                    2
+                })?));
+            }
+            "-h" | "--help" => {
+                println!("{MCP_USAGE}");
+                return Ok(());
+            }
+            _ => {
+                eprintln!("rpatch: unknown MCP argument: {arg}\n{MCP_USAGE}");
+                return Err(2);
+            }
+        }
+    }
+    let cwd = cwd.unwrap_or_else(|| PathBuf::from("."));
+    let cwd = std::fs::canonicalize(&cwd)
+        .and_then(|path| {
+            if path.is_dir() {
+                Ok(path)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::NotADirectory,
+                    "not a directory",
+                ))
+            }
+        })
+        .map_err(|err| {
+            eprintln!("rpatch: cannot use --cwd {}: {err}", cwd.display());
+            3
+        })?;
+    mcp::serve(cwd).map_err(|err| {
+        eprintln!("rpatch: MCP server: {err}");
+        3
+    })
 }

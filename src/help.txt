@@ -9,6 +9,10 @@ replacement lines (empty to delete the lines)
 >>>>>>> NEW
 EOF
 
+MCP mode: rpatch mcp [--cwd <directory>]
+  Start a local MCP server over stdin/stdout with one editing tool, rpatch.
+  Relative paths use --cwd (default: current directory). See docs/mcp.md.
+
 Block format (stdin not starting with `{`):
   === <file>               switch to a file; any number of blocks may follow
   <<<<<<< OLD count=N      replace N matches instead of exactly 1
