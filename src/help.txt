@@ -57,7 +57,9 @@ Rules:
 
 Tips:
   - Always quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
-  - Chain follow-up commands with &&, so they do not run after a failed edit.
+  - Chain follow-up commands with &&, so they do not run after a failed edit. With a
+    heredoc, put them on the opener line: `rpatch <<'EOF' && git diff --stat`. A
+    command on a line after the closing EOF runs even when the edit failed.
   - To edit part of a long line, use OLD part; to add lines next to one, BEFORE/AFTER.
 
 Output:
