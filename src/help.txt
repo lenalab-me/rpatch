@@ -1,0 +1,67 @@
+rpatch - apply exact-match text replacements to files, all or nothing
+
+Usage: rpatch [--diff] [--dry-run] <<'EOF'
+=== path/to/file
+<<<<<<< OLD
+lines to replace (written as is, no escaping)
+=======
+replacement lines (empty to delete the lines)
+>>>>>>> NEW
+EOF
+
+Block format (stdin not starting with `{`):
+  === <file>               switch to a file; any number of blocks may follow
+  <<<<<<< OLD count=N      replace N matches instead of exactly 1
+  <<<<<<< FROM / <<<<<<< TO / ======= / >>>>>>> NEW
+                           replace from the FROM lines up to, not including, the
+                           first TO lines after them (FROM is replaced, TO is kept;
+                           to delete an end marker line too, use the line after it
+                           as TO; NEW must not end with the TO lines). FROM and TO
+                           pick lines: their last line may be just the start of a
+                           line, e.g. the first words of a long paragraph
+  Blocks are whole lines: they match only at line starts and follow the file's
+  line endings (LF or CRLF). Trailing whitespace on marker lines is ignored.
+  Markers may be longer than 7 characters. A block opened with `<<<<<<<<< OLD`
+  (9) ends only at `=========` and `>>>>>>>>> NEW` (9), so lines with 7-character
+  markers inside it are plain text.
+  <<<<<<< BEFORE / <<<<<<< AFTER, then ======= and >>>>>>> NEW (count=N allowed)
+                           insert the NEW lines before/after each line that contains
+                           the BEFORE/AFTER text; that text may be any part of the
+                           line, since no existing line is rewritten. Several AFTER
+                           blocks on one anchor stack up in reverse (each goes right
+                           below the anchor), so put the lines in one NEW instead
+
+JSON (stdin starting with `{`):
+  {"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1},
+             {"file": "path", "from": "start text", "to": "end text", "new": "..."}]}
+  JSON texts are matched anywhere, not only at line starts.
+  BEFORE/AFTER exist only in the block format.
+
+Rules:
+  - Matching is exact; whitespace is never matched loosely.
+  - The number of matches must equal the count (default 1). FROM must match once.
+    Overlapping matches (such as repeated identical lines) count, and are an error.
+  - Edits to the same file apply in order; each one sees the result of the previous.
+  - Nothing is written unless every edit matches. Each file is replaced via temp file
+    + rename, which breaks hard links to it (rpatch warns). A UTF-8 BOM is kept and
+    takes no part in matching.
+
+Tips:
+  - Always quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
+  - Chain follow-up commands with &&, so they do not run after a failed edit.
+  - To edit part of a long line, use JSON; to add lines next to one, use BEFORE/AFTER.
+
+Output:
+  One line per file: `M <file>  edits=<n>  at_lines=3,10-12`. at_lines are the lines
+  of the edited file that changed; lines that OLD and NEW share at the start or end
+  are not counted. A deletion shows the line that now sits where the deleted lines
+  were, or the last line if the end of the file was deleted. A range edit also
+  prints which lines it replaced. Errors go to stderr, and nothing is written.
+
+Options:
+  --diff         also print a unified diff of the changes
+  -n, --dry-run  check and report, but write nothing
+  -h, --help     print this help
+  -V, --version  print the version
+
+Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input, 3 I/O error
