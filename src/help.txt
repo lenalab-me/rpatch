@@ -1,44 +1,50 @@
 rpatch - apply exact-match text replacements to files, all or nothing
 
-Usage: rpatch [--diff] [--dry-run] <<'EOF'
+Usage: rpatch [--diff] [--dry-run] <<'EOF' && git diff --stat
 === path/to/file
 <<<<<<< OLD
-lines to replace (written as is, no escaping)
+lines to replace (whole lines, written as is, no escaping)
 =======
 replacement lines (empty to delete the lines)
 >>>>>>> NEW
 EOF
 
-MCP mode (only in a build with `--features mcp`): rpatch mcp [--cwd <directory>]
-  Start a local MCP server over stdin/stdout with one editing tool, rpatch.
-  The tool takes `input` (the text you would give stdin), `diff` (default false)
-  and `dry_run`. Relative paths use --cwd (default: current directory).
-
-Block format (stdin not starting with `{`):
-  === <file>               switch to a file; any number of blocks may follow
-  <<<<<<< OLD count=N      replace N matches instead of exactly 1
-  <<<<<<< OLD part         the OLD text may be any part of a line (and NEW replaces
-                           just that part); without its final line break, like JSON.
-                           Use it on purpose: plain OLD refuses part of a line so that
-                           an abbreviated line cannot leave its rest behind
+Blocks (any number, after one or more `=== <file>` lines):
+  <<<<<<< OLD              whole lines, matched only at line starts, exactly once
+  <<<<<<< OLD count=N      exactly N matches, all replaced
+  <<<<<<< OLD part         any part of a line (or of several lines), without the
+                           final line break. Plain OLD refuses part of a line on
+                           purpose, so a shortened line cannot leave its rest behind
   <<<<<<< FROM / <<<<<<< TO / ======= / >>>>>>> NEW
-                           replace from the FROM lines up to, not including, the
-                           first TO lines after them (FROM is replaced, TO is kept;
-                           to delete an end marker line too, use the line after it
-                           as TO; NEW must not end with the TO lines). FROM and TO
-                           pick lines: their last line may be just the start of a
-                           line, e.g. the first words of a long paragraph
-  Blocks are whole lines: they match only at line starts and follow the file's
-  line endings (LF or CRLF). Trailing whitespace on marker lines is ignored.
-  Markers may be longer than 7 characters. A block opened with `<<<<<<<<< OLD`
-  (9) ends only at `=========` and `>>>>>>>>> NEW` (9), so lines with 7-character
-  markers inside it are plain text.
-  <<<<<<< BEFORE / <<<<<<< AFTER, then ======= and >>>>>>> NEW (count=N allowed)
-                           insert the NEW lines before/after each line that contains
-                           the BEFORE/AFTER text; that text may be any part of the
-                           line, since no existing line is rewritten. Several AFTER
-                           blocks on one anchor stack up in reverse (each goes right
-                           below the anchor), so put the lines in one NEW instead
+                           replace from the FROM lines up to the first TO lines after
+                           them; TO is kept, so NEW must not end with it. The last
+                           line of FROM and TO may be just the start of a line
+  <<<<<<< BEFORE / <<<<<<< AFTER / ======= / >>>>>>> NEW   (count=N allowed)
+                           insert the NEW lines before/after the line that contains
+                           the text (any part of one line); no line is rewritten
+
+Tips:
+  - Quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
+  - Chain follow-up commands on the opener line: `rpatch <<'EOF' && git diff --stat`.
+    A command on a line after the closing EOF runs even when the edit failed.
+  - Nothing is written unless every edit matches. Read the error, fix, and rerun.
+
+Output: `M <file>  edits=<n>  at_lines=3,10-12` per file; at_lines are the lines
+that changed. Errors go to stderr. Options: --diff (also print a unified diff),
+-n/--dry-run (write nothing), -h/--help, -V/--version.
+Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input,
+3 I/O error.
+
+Details
+-------
+Blocks:
+  Blocks follow the file's line endings (LF or CRLF). Trailing whitespace on marker
+  lines is ignored. Markers may be longer than 7 characters: a block opened with
+  `<<<<<<<<< OLD` (9) ends only at `=========` and `>>>>>>>>> NEW` (9), so lines with
+  7-character markers inside it are plain text.
+  FROM/TO: to delete an end marker line too, use the line after it as TO.
+  BEFORE/AFTER: several AFTER blocks on one anchor stack up in reverse (each goes
+  right below the anchor), so put the lines in one NEW instead.
 
 JSON (stdin starting with `{`):
   {"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1},
@@ -51,28 +57,16 @@ Rules:
   - The number of matches must equal the count (default 1). FROM must match once.
     Overlapping matches (such as repeated identical lines) count, and are an error.
   - Edits to the same file apply in order; each one sees the result of the previous.
-  - Nothing is written unless every edit matches. Each file is replaced via temp file
-    + rename, which breaks hard links to it (rpatch warns). A UTF-8 BOM is kept and
-    takes no part in matching.
-
-Tips:
-  - Always quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
-  - Chain follow-up commands with &&, so they do not run after a failed edit. With a
-    heredoc, put them on the opener line: `rpatch <<'EOF' && git diff --stat`. A
-    command on a line after the closing EOF runs even when the edit failed.
-  - To edit part of a long line, use OLD part; to add lines next to one, BEFORE/AFTER.
+  - Each file is replaced via temp file + rename, which breaks hard links to it
+    (rpatch warns). A UTF-8 BOM is kept and takes no part in matching.
 
 Output:
-  One line per file: `M <file>  edits=<n>  at_lines=3,10-12`. at_lines are the lines
-  of the edited file that changed; lines that OLD and NEW share at the start or end
-  are not counted. A deletion shows the line that now sits where the deleted lines
-  were, or the last line if the end of the file was deleted. A range edit also
-  prints which lines it replaced. Errors go to stderr, and nothing is written.
+  Lines that OLD and NEW share at the start or end are not counted in at_lines.
+  A deletion shows the line that now sits where the deleted lines were, or the last
+  line if the end of the file was deleted. A range edit also prints which lines it
+  replaced.
 
-Options:
-  --diff         also print a unified diff of the changes
-  -n, --dry-run  check and report, but write nothing
-  -h, --help     print this help
-  -V, --version  print the version
-
-Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input, 3 I/O error
+MCP mode (only in a build with `--features mcp`): rpatch mcp [--cwd <directory>]
+  Start a local MCP server over stdin/stdout with one editing tool, rpatch.
+  The tool takes `input` (the text you would give stdin), `diff` (default false)
+  and `dry_run`. Relative paths use --cwd (default: current directory).
