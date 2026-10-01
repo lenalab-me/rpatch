@@ -41,6 +41,12 @@ def edit_event(c):
     tool, inp, res = c['tool'], c.get('input') or {}, c.get('res') or ''
     if tool in ('Edit', 'MultiEdit'):
         return 'edit', {base(inp.get('file_path'))}, bool(c.get('err'))
+    if tool == 'mcp__rpatch__rpatch':
+        if inp.get('dry_run'):
+            return None
+        text = inp.get('input') or ''
+        files = RPATCH_HEADER.findall(text) + JSON_FILE.findall(text)
+        return 'rpatch', {base(f) for f in files}, bool(c.get('err'))
     if tool != 'Bash':
         return None
     cmd = inp.get('command') or ''
@@ -188,7 +194,10 @@ def main():
                         n['python_replace_unguarded'] += 1
                     if c.get('err') or PY_FAIL.search(res):
                         n['python_replace_failed'] += 1
-                if RPATCH.search(cmd):
+                if RPATCH.search(cmd) and not (RPATCH_HEADER.search(cmd) or JSON_FILE.search(cmd)):
+                    # --help や -V など、編集しない呼び出し
+                    n['rpatch_discovery'] += 1
+                elif RPATCH.search(cmd):
                     n['rpatch'] += 1
                     dry = bool(RPATCH_DRY_RUN.search(cmd))
                     if dry:
@@ -197,6 +206,16 @@ def main():
                         n['rpatch_failed'] += 1
                         if not dry:
                             n['rpatch_failed_real'] += 1
+            if tool == 'mcp__rpatch__rpatch':
+                n['rpatch'] += 1
+                n['rpatch_mcp'] += 1
+                dry = bool(inp.get('dry_run'))
+                if dry:
+                    n['rpatch_dry_run'] += 1
+                if c.get('err'):
+                    n['rpatch_failed'] += 1
+                    if not dry:
+                        n['rpatch_failed_real'] += 1
             if tool in ('Edit', 'MultiEdit'):
                 n['edit'] += 1
                 f = inp.get('file_path')
@@ -216,7 +235,8 @@ def main():
         **{k: n[k] for k in [
             'tool_calls', 'python_replace', 'python_replace_unguarded', 'python_replace_failed',
             'edit', 'edit_same_file_consecutive', 'edit_failed',
-            'rpatch', 'rpatch_dry_run', 'rpatch_failed', 'rpatch_failed_real',
+            'rpatch', 'rpatch_mcp', 'rpatch_dry_run', 'rpatch_failed', 'rpatch_failed_real',
+            'rpatch_discovery',
         ]},
         'replace_failed_total': n['python_replace_failed'] + n['edit_failed'] + n['rpatch_failed'],
         'share_python_replace': round(n['python_replace'] / edits, 3) if edits else None,
