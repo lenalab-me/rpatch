@@ -168,6 +168,8 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 
 ## 進み具合
 
+- 2026-10-02: `--help` から MCP の節を消した（全体 67 行）。MCP の登録を外し、手元も MCP なしのビルドにしたので、全文を読んだエージェントが `rpatch mcp` に寄り道しないように。MCP の使い方は `docs/mcp.md` と、MCP 入りのビルドの `rpatch mcp --help` に残っている。
+
 - 2026-10-02: `--help` の並びを組み替えた。エージェントは `rpatch --help | head -40` で読むことが多いのに、78 行あって Tips・出力・終了コードが 40 行より後ろにあった。書き方の例・ブロックの種類（OLD、OLD count、OLD part、FROM/TO、BEFORE/AFTER）・Tips・出力・オプション・終了コードを先頭 37 行に収め、細かい規則・JSON・MCP は「Details」として後ろに回した（全体 72 行）。使い方の例の 1 行目も `rpatch … <<'EOF' && git diff --stat` にした。
 
 - 2026-10-02: `--help` の Tips に、ヒアドキュメントでは `rpatch <<'EOF' && …` と開始行に `&&` を書くことを足した。beat-jam のセッション（1d865788、17:36:46 UTC）で、`sd -F` に `- ` で始まる文字列を渡して失敗した（`--` を付け忘れた）のに、`EOF` の次の行の `git add … && git commit` が実行され、編集の途中の状態がコミットされた。改行で `&&` の連鎖が切れるため。13 秒後に `git show --stat` で気づき、`sd -F --` で残りを当てて `--amend` した（push 前）。rpatch 自体は失敗した `sd` の後ろにあり、実行されていない。
