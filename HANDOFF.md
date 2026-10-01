@@ -141,14 +141,14 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 
 1. ~~**新しいセッションで、Claude Code から `mcp__rpatch__rpatch` を実際に使えるか確かめる。**~~ 済み（下の「進み具合」を参照）。
 2. ~~**`bench/compare_metrics.py:78-80` の失敗判定。**~~ 済み。Codex で照合の失敗を起こして確かめ、`status` だけで判定するようにした（下の「進み具合」を参照）。
-3. **コミットを分ける。** 未コミットの変更がとても多い。lib 化（挙動は変えない）→ MCP サーバー → CI → bench と実験記録、の順に分けると追いやすい。`main` に直接積むか、ブランチを切るかも決める。
+3. ~~**コミットを分ける。**~~ 済み（下の「進み具合」を参照）。`main` に直接積んだ。push はまだしていない。
 4. **CI（`.github/workflows/build.yml`）はまだ一度も動かしていない。** Windows は手元で検証していない。Windows では `canonicalize` すると `--cwd` が `\\?\C:\...` の形になり、instructions や `cwd:` の表示にそのまま出る。動作は Rust の `PathBuf::push` の正規化でおそらく大丈夫。表示が気になるなら `dunce` を使う。
 5. **小さいもの**
    - `docs/mcp.md` の「1つのサーバー内の編集要求は順番に処理する」は、届いた順とも読める。実際は同時に処理しないだけで、届いた順は守られない。同じ箇所への 2 件を同時に送ると、5 回中 4 回は後から送ったほうが先に適用された（片方は照合に失敗し、ファイルは壊れない）。「同時には処理しない」と書き直す。
    - MCP では diff が既定で有効。当初の「成功時の出力は短く」という方針とは逆なので、このままでよいか決める。
-   - release バイナリは rmcp と tokio のぶん 4.0MB ある。CLI だけ使うなら不要なので、`mcp` を Cargo feature にする手もある。
+   - ~~release バイナリは rmcp と tokio のぶん 4.0MB ある。~~ 済み。`mcp` を Cargo feature（既定ではオフ）にした。featureなしの release は 0.8MB。
    - CLI がファイルを読む前に `current_dir()` を解決するようになった。cwd が削除されていると、入力が不正でも終了コードが 3 になる（以前は 2）。
-   - `src/help.txt` の「See docs/mcp.md」は、バイナリだけ持っている人には辿れない。
+   - ~~`src/help.txt` の「See docs/mcp.md」は、バイナリだけ持っている人には辿れない。~~ 済み。参照をやめ、ツールの引数を help に書いた。
    - `docs/mcp.md` の Codex での確認記録（2026-10-01 …）は使い方の説明ではないので、`docs/mcp-experiment.md` に移す。リンク先の `learn.chatgpt.com/docs/extend/mcp` が実在するかも確かめる。
    - HANDOFF の冒頭（「このディレクトリはまだ空で…」）が古いままになっている。
    - 絶対パスを編集すると、diff の見出しが `--- a//tmp/x.txt` と二重スラッシュになる（CLI も MCP も同じ）。
@@ -166,6 +166,14 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 
 ## 進み具合
 
+- 2026-10-01: 未コミットだった変更をコミットに分け、MCP を Cargo feature にした。`main` に 6 コミット積んだ（最後はこの HANDOFF の更新。push はしていない）。
+  - 順に、lib 化（挙動は変えない）→ MCP サーバー（v0.7.0）→ CI → bench と実験記録・README・HANDOFF → `mcp` feature → HANDOFF。各コミットを、その時点のファイルだけを取り出した別ディレクトリで fmt・clippy（`-D warnings`）・テストして確かめた。
+  - `mcp` feature は既定でオフ。featureなしで `rpatch mcp` を実行すると、「MCP なしでビルドされた」と 1 行出して終了コード 2 になる（stdin の編集としては処理しない）。`tests/mcp.rs` は feature ありのときだけ動く。CLI のテストを 1 件足して、feature なしのエラーを確かめる（85 件）。feature ありは 84 件＋MCP 8 件。
+  - release バイナリは、featureなしで 0.8MB、ありで 4.0MB。CI は feature なし・ありの両方で clippy とテストを回し、配布用の release は `--features mcp` 付きでビルドする（ダウンロードしてそのまま Codex や Claude Code に登録できるように）。
+  - `cargo install --locked --path . --features mcp` で入れ直し、`~/.cargo/bin/rpatch` で MCP の initialize と dry-run の tools/call が返ることを確かめた。
+  - 作業中に `src/mcp.rs`（未コミットだった）を誤って上書きして失われた。Claude Code のセッション記録（読み出し結果と Sonnet の編集内容）から作り直した。行数（103）と、テスト（MCP 8 件）・clippy が通ることで確かめたが、元のファイルとのバイト単位の照合はできていない。
+
+- 2026-10-01: `bench/compare_metrics.py` の Codex の MCP 失敗判定を直した。
 - 2026-10-01: `bench/compare_metrics.py` の Codex の MCP 失敗判定を直した。
   - 修正版のバイナリで Codex（CLI 0.159.2／gpt-6.1-sol、`--ignore-user-config`、rpatch の MCP だけを渡す）に照合の失敗を 1 回起こした。ログは `status: "failed"`、`structured_content: null`、本文は CLI の stderr と同じ診断だった。`isError` だけで `failed` になる。修正前のバイナリの smoke ログでも失敗は `failed` だったので、これまでの集計結果は変わらない。
   - そこで `structured_content.exit_code` を見るのをやめ、`status` と `error` だけで判定する。テストデータも実際の形に合わせた。集計テスト 5 件が通る。
@@ -239,7 +247,7 @@ GPT が作った 0.7.0（MCP 対応）を Claude Code（Opus）でレビュー�
 
 ## 導入（2026-10-01 14:22 JST = 05:22 UTC）
 
-- `cargo install --path .` で `~/.cargo/bin/rpatch`（v0.3.1）に入れた。コードを変えたら、もう一度 `cargo install --path .` を実行する。
+- `cargo install --path .` で `~/.cargo/bin/rpatch`（v0.3.1）に入れた。コードを変えたら、もう一度入れ直す。0.7.0 からは MCP が Cargo feature になったので、`cargo install --locked --path . --features mcp` で入れる（Claude Code と Codex に MCP として登録しているため）。featureなしだと `rpatch mcp` が使えなくなる。
 - `~/.claude/CLAUDE.md` の「CLI ツール」の節に、次の 1 行を足した（`sd` の行の次）。
   - 「複数行・複数箇所の置換: `rpatch`（stdin に区切り形式で渡す。書き方は `rpatch --help`）。python のヒアドキュメントで置換しない」
   - 2026-10-01 15:59 JST（06:59 UTC）に「置換」を「置換・挿入」に変えた（BEFORE/AFTER を入れたため）。導入後の集計で、この前後を分けて見るときの区切りにする。
