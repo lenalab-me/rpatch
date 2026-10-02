@@ -18,7 +18,7 @@ DEFAULT_EXCLUDE = ('prod-rpatch', 'pi-agent')
 HEREDOC_WRITE = re.compile(r'(^|[;&|(\n])\s*(cat|tee)\s+(-a\s+)?>{0,2}\s*\S+\s*<<|cat\s*>>?\s*\S+\s*<<')
 NODE = re.compile(r'(^|[;&|(\n])\s*node\s')
 # rpatch 自身のエラー行（ほかのコマンドの "error:" と区別するため、rpatch の書式に限る）
-RPATCH_ERROR = re.compile(r'^(rpatch: (?!nothing written).*|error: edits\[\d+\].*)$', re.M)
+RPATCH_ERROR = re.compile(r'^(rpatch: (?!nothing written).*|error: .*)$', re.M)
 COLUMNS = ['rpatch', '失敗', 'help', 'sd', 'cat>', 'Edit', 'Write', 'py置換', 'py他', 'node']
 
 
@@ -126,21 +126,21 @@ def pick(query):
     raise SystemExit(f'セッションが見つかりません: {query or "(直近)"}')
 
 
-def list_sessions(n):
-    for f in sessions()[:n]:
-        count = sum(sum(1 for u in load(t)[0] if classify(u)[0] == 'rpatch') for t, _ in transcripts(f))
-        when = datetime.fromtimestamp(os.path.getmtime(f)).strftime('%m-%d %H:%M')
-        print(f'{when}  rpatch {count:4}  {os.path.relpath(f, ROOT)}')
+_cache = {}
 
 
-def report(path, verbose):
+def analyze(path):
+    """1 つのセッションの集計。ファイルの更新時刻が変わらなければ前回の結果を返す。"""
+    parts = transcripts(path)
+    key = (path, tuple(os.path.getmtime(t) for t, _ in parts))
+    if _cache.get(path, (None,))[0] == key:
+        return _cache[path][1]
     rows, failures, span = [], [], []
     first_prompt = None
-    for t, name in transcripts(path):
+    for t, name in parts:
         uses, prompt = load(t)
         first_prompt = first_prompt or prompt
         counts = dict.fromkeys(COLUMNS, 0)
-        last_rpatch = None
         for i, u in enumerate(uses):
             span.append(u['ts'])
             kind, files = classify(u)
@@ -155,54 +155,99 @@ def report(path, verbose):
                 # 同じファイルへの次の rpatch が成功するまで
                 fix = next((v for v in uses[i + 1:] if classify(v)[0] == 'rpatch' and not failed(v)
                             and (classify(v)[1] & files)), None)
-                failures.append((u, name, fix))
+                failures.append(failure(u, name, fix))
         rows.append((name, counts))
-
+    failures.sort(key=lambda f: f['ts'])
     span = [s for s in span if s]
-    start, end = (local(min(span)), local(max(span))) if span else (None, None)
-    print(f'セッション: {os.path.relpath(path, ROOT)}')
-    if start:
-        print(f'期間: {start:%Y-%m-%d %H:%M}〜{end:%H:%M}')
-    if first_prompt:
-        print('最初の依頼: ' + ' '.join(first_prompt.split())[:100])
+    result = {
+        'path': path,
+        'rel': os.path.relpath(path, ROOT),
+        'start': local(min(span)) if span else None,
+        'end': local(max(span)) if span else None,
+        'prompt': ' '.join((first_prompt or '').split()),
+        'rows': rows,
+        'total': {c: sum(r[c] for _, r in rows) for c in COLUMNS},
+        'failures': failures,
+        'masked': sum(1 for f in failures if f['masked']),
+    }
+    _cache[path] = (key, result)
+    return result
+
+
+def failure(u, name, fix):
+    errors = RPATCH_ERROR.findall(u['res']) or ['(エラー行なし)']
+    # エラー行に続く字下げの行（hint や、どこで食い違ったか）を 2 行まで
+    lines = u['res'].splitlines()
+    at = lines.index(errors[0]) + 1 if errors[0] in lines else len(lines)
+    details = [l.strip() for l in lines[at:at + 2] if l.startswith('  ')]
+    return {
+        'ts': local(u['ts']),
+        'name': name,
+        'masked': not u['err'],
+        'error': errors[0],
+        'details': details,
+        'fix_secs': (local(fix['ts']) - local(u['ts'])).total_seconds() if fix else None,
+        'input': u['input'].get('command') or '',
+        'output': u['res'],
+    }
+
+
+def recent(hours=None, limit=None, exclude=DEFAULT_EXCLUDE):
+    """更新が新しい順のセッションの集計。"""
+    now = datetime.now().timestamp()
+    out = []
+    for f in sessions():
+        if hours is not None and now - os.path.getmtime(f) > hours * 3600:
+            break
+        if any(x in f for x in exclude):
+            continue
+        out.append(analyze(f))
+        if limit and len(out) >= limit:
+            break
+    return out
+
+
+def list_sessions(n):
+    for s in recent(limit=n, exclude=()):
+        when = s['end'].strftime('%m-%d %H:%M') if s['end'] else '--'
+        print(f'{when}  rpatch {s["total"]["rpatch"]:4}  失敗 {s["total"]["失敗"]:3}  {s["rel"]}')
+
+
+def report(path, verbose):
+    s = analyze(path)
+    print(f'セッション: {s["rel"]}')
+    if s['start']:
+        print(f'期間: {s["start"]:%Y-%m-%d %H:%M}〜{s["end"]:%H:%M}')
+    if s['prompt']:
+        print('最初の依頼: ' + s['prompt'][:100])
     print()
 
     print('編集の仕方（呼び出しの数。rpatch は編集した回数、help はそれ以外の rpatch）')
-    names = [n[:24] for n, _ in rows] + ['合計']
+    names = [n[:24] for n, _ in s['rows']] + ['合計']
     w = max(width(n) for n in names)
-    print(pad('', w) + ''.join(pad(c, max(width(c), 4) + 2, right=True) for c in COLUMNS))
-    total = dict.fromkeys(COLUMNS, 0)
-    for (name, counts), label in zip(rows, names):
-        for c in COLUMNS:
-            total[c] += counts[c]
+    cell = lambda v, c: pad(str(v), max(width(c), 4) + 2, right=True)
+    print(pad('', w) + ''.join(cell(c, c) for c in COLUMNS))
+    for (_, counts), label in zip(s['rows'], names):
         if any(counts.values()):
-            print(pad(label, w) + ''.join(pad(str(counts[c]), max(width(c), 4) + 2, right=True) for c in COLUMNS))
-    print(pad('合計', w) + ''.join(pad(str(total[c]), max(width(c), 4) + 2, right=True) for c in COLUMNS))
+            print(pad(label, w) + ''.join(cell(counts[c], c) for c in COLUMNS))
+    print(pad('合計', w) + ''.join(cell(s['total'][c], c) for c in COLUMNS))
     print()
 
-    failures.sort(key=lambda f: f[0]['ts'] or '')
-    masked = sum(1 for u, _, _ in failures if not u['err'])
-    print(f'rpatch の失敗 {len(failures)} 件（後続のコマンドで終了コードが 0 になったもの {masked} 件）')
-    for u, name, fix in failures:
-        errors = RPATCH_ERROR.findall(u['res']) or ['(エラー行なし)']
-        status = '終了コード 0' if not u['err'] else '失敗'
-        print(f'  {local(u["ts"]):%H:%M:%S}  {name[:24]}  [{status}]')
-        print(f'    {errors[0][:140]}')
-        # エラー行に続く字下げの行（hint や、どこで食い違ったか）を 2 行まで
-        lines = u['res'].splitlines()
-        at = lines.index(errors[0]) + 1 if errors[0] in lines else len(lines)
-        for line in [l for l in lines[at:at + 2] if l.startswith('  ')]:
-            print(f'    {line.strip()[:140]}')
-        if fix:
-            secs = (local(fix['ts']) - local(u['ts'])).total_seconds()
-            print(f'    → {secs:.0f} 秒後の rpatch で成功')
+    print(f'rpatch の失敗 {len(s["failures"])} 件（後続のコマンドで終了コードが 0 になったもの {s["masked"]} 件）')
+    for f in s['failures']:
+        status = '終了コード 0' if f['masked'] else '失敗'
+        print(f'  {f["ts"]:%H:%M:%S}  {f["name"][:24]}  [{status}]')
+        for line in [f['error']] + f['details']:
+            print(f'    {line[:140]}')
+        if f['fix_secs'] is not None:
+            print(f'    → {f["fix_secs"]:.0f} 秒後の rpatch で成功')
         else:
             print('    → 同じファイルへの rpatch の成功なし')
         if verbose:
             print('    --- 入力')
-            print('\n'.join('    | ' + line for line in (u['input'].get('command') or '').splitlines()))
+            print('\n'.join('    | ' + line for line in f['input'].splitlines()))
             print('    --- 出力')
-            print('\n'.join('    | ' + line for line in u['res'].splitlines()[:30]))
+            print('\n'.join('    | ' + line for line in f['output'].splitlines()[:30]))
 
 
 def main():

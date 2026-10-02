@@ -29,7 +29,7 @@
 2. `python3 tools/log-analysis/metrics.py /tmp/rpatch-calls.jsonl --since … --exclude-proj prod-rpatch --exclude-proj pi-agent` で数値を出す。結果を残すなら `~/project/prod/rpatch-notes/log-analysis/` に置く。
 3. 見る数値: python での置換（`python_replace`、`share_python_replace`）、rpatch での編集（`rpatch`、`--help` などは `rpatch_discovery` に分けて数える）、Edit、失敗とそこからの立ち直り（`rework`）。
 
-1 つのセッションをすぐ見たいときは `python3 tools/log-analysis/session.py [プロジェクト名やセッション ID の一部]`。サブエージェントを含めて、編集の仕方の内訳（rpatch・sd・cat>・Edit・python など）と、rpatch の失敗ごとのエラー・hint・立ち直りまでの秒数を出す。引数なしなら直近のセッション（prod-rpatch と pi-agent を除く）、`--list` で直近のセッションの一覧、`-v` で失敗した呼び出しの入力と出力も出す。
+1 つのセッションをすぐ見たいときは `python3 tools/log-analysis/session.py [プロジェクト名やセッション ID の一部]`。サブエージェントを含めて、編集の仕方の内訳（rpatch・sd・cat>・Edit・python など）と、rpatch の失敗ごとのエラー・hint・立ち直りまでの秒数を出す。引数なしなら直近のセッション（prod-rpatch と pi-agent を除く）、`--list` で直近のセッションの一覧、`-v` で失敗した呼び出しの入力と出力も出す。ブラウザで見るなら `python3 tools/log-analysis/dashboard.py`（http://127.0.0.1:8765/）。開くたびに集計し直し、10 分ごとに再読み込みする。期間を選べるセッション一覧、最近の rpatch の失敗、セッションごとの内訳を出す。
 
 ベースライン（導入前、2026-09-24〜2026-10-01T04:50 UTC、85 セッション）: python での置換 317 回（編集の 75%）、Edit 105 回。
 
