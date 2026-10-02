@@ -17,8 +17,9 @@ Blocks (any number, after one or more `=== <file>` lines):
                            purpose, so a shortened line cannot leave its rest behind
   <<<<<<< FROM / <<<<<<< TO / ======= / >>>>>>> NEW
                            replace from the FROM lines up to the first TO lines after
-                           them; TO is kept, so NEW must not end with it. The last
-                           line of FROM and TO may be just the start of a line
+                           them (no TO lines: to the end of the file); TO is kept, so
+                           NEW must not end with it. The last line of FROM and TO may
+                           be just the start of a line
   <<<<<<< BEFORE / <<<<<<< AFTER / ======= / >>>>>>> NEW   (count=N allowed)
                            insert the NEW lines before/after the line that contains
                            the text (any part of one line); no line is rewritten

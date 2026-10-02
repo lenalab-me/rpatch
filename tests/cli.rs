@@ -989,6 +989,66 @@ fn at_lines_for_appending_at_the_end() {
     .stdout("M a.txt  edits=1  at_lines=3-4\n");
 }
 
+/// TO の行が空なら、FROM からファイルの最後までを置き換える（末尾を消すのに `head -n` へ戻っていた）。
+#[test]
+fn empty_to_runs_to_the_end_of_the_file() {
+    let dir = setup(&[("a.go", "package a\n\nfunc a() {}\n\n// old\nfunc b() {}\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.go\n<<<<<<< FROM\n\n// old\n<<<<<<< TO\n=======\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "replaced lines 4-6 (3 lines) with 0 lines",
+    ));
+    assert_eq!(read(&dir, "a.go"), "package a\n\nfunc a() {}\n");
+}
+
+/// 最後の行に改行がないファイルは、置き換えたあとも改行なしで終わる。
+#[test]
+fn empty_to_keeps_a_file_without_a_final_line_break() {
+    let dir = setup(&[("a.txt", "a\nb\nc")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< FROM\nb\n<<<<<<< TO\n=======\nB\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "a\nB");
+}
+
+/// JSON の "to" が空でも、ファイルの最後まで。
+#[test]
+fn empty_json_to_runs_to_the_end_of_the_file() {
+    let dir = setup(&[("a.txt", "a\nb\nc\n")]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "from": "b\n", "to": "", "new": ""}]}),
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "a\n");
+}
+
+/// FROM のあとに TO を書かずに `=======` が来たら、OLD を勧め、FROM の順番を示す。
+#[test]
+fn separator_in_from_suggests_old_and_shows_the_order() {
+    let dir = setup(&[("a.txt", "a\nb\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< FROM\na\n=======\nA\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "open the block with `<<<<<<< OLD` instead",
+    ))
+    .stderr(predicate::str::contains(
+        "TO lines (none: to the end of the file)",
+    ));
+}
+
 /// TO は残るので、NEW の末尾にも TO を書くと 2 回出てくる。よくある書き間違いなので失敗にする。
 #[test]
 fn range_rejects_new_ending_with_the_kept_to() {

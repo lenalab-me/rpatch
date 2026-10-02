@@ -292,9 +292,10 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                 b.part_start = n;
             }
             Part::From if line == m.sep => {
+                // Seen when FROM is used like OLD, or its parts are written out of order.
                 return Err(format!(
-                    "line {n}: a FROM part needs `{}` before `{}` (the block starts at line {})",
-                    m.to, m.sep, b.start
+                    "line {n}: a FROM part needs `{}` before `{}` (the block starts at line {})\n  hint: to replace exactly the lines above, open the block with `{} OLD` instead\n  the FROM order is: FROM lines, `{}`, TO lines (none: to the end of the file), `{}`, new lines, `{}`",
+                    m.to, m.sep, b.start, m.open, m.to, m.sep, m.close
                 ));
             }
             Part::New if line == m.close => {

@@ -130,6 +130,21 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
             } else {
                 start + from_text.len()
             };
+            // An empty TO is the end of the file: deleting or rewriting a file's tail
+            // otherwise needs every line in OLD, and agents fell back to `head -n`.
+            if to_text.is_empty() {
+                let new = if !content.ends_with('\n') && !content.is_empty() {
+                    // Keep the file without a final break.
+                    new.strip_suffix(nl).unwrap_or(&new).to_string()
+                } else {
+                    new.into_owned()
+                };
+                return Ok(vec![Span {
+                    start,
+                    end: content.len(),
+                    new,
+                }]);
+            }
             let Some(&q) = occurrences(&content[after..], to_text, edit.lines).first() else {
                 return Err(to_not_found(
                     content, &to, to_text, start, after, edit.lines,

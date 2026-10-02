@@ -6,6 +6,7 @@ pub enum Target {
     /// Replace every match of the text.
     Text(String),
     /// Replace from the start of `from` up to (not including) the first `to` after it.
+    /// An empty `to` is the end of the file.
     Range { from: String, to: String },
     /// Insert `new` as whole lines before or after each line that contains `anchor`
     /// (which may be any part of the line). Block format only.
@@ -180,8 +181,8 @@ fn validate(edits: &[Edit]) -> Result<(), String> {
                     "{label}: nothing to insert (the NEW part is empty)"
                 ));
             }
-            Target::Range { from, to } if from.is_empty() || to.is_empty() => {
-                return Err(format!("{label}: \"from\" and \"to\" must not be empty"));
+            Target::Range { from, .. } if from.is_empty() => {
+                return Err(format!("{label}: \"from\" must not be empty"));
             }
             _ => {}
         }

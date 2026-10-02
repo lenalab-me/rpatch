@@ -82,6 +82,7 @@ An `Edit` has a target (`Target`), the replacement (`new`), and the exact number
 
 - FROM must match exactly once. TO is the first match after the last line of FROM.
 - The text from FROM up to (not including) TO is replaced with NEW; TO is kept. If NEW ends with the TO text, the edit fails (TO would appear twice, a common slip).
+- An empty TO is the end of the file: FROM up to the end is replaced. Agents cut a file's tail with `head -n` and line numbers otherwise (2026-10-02).
 
 ### BEFORE / AFTER
 
