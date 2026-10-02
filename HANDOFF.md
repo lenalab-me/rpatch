@@ -12,7 +12,7 @@
 ## 入れ方と、普段の使われ方
 
 - コードを変えたら `cargo install --locked --path .` で入れ直す（CLI だけ、0.8MB）。MCP を使い直すときは `--features mcp` で入れてから、`claude mcp add --transport stdio --scope user rpatch -- ~/.cargo/bin/rpatch mcp`、`codex mcp add rpatch -- ~/.cargo/bin/rpatch mcp` で登録する。
-- エージェントへの案内は `~/.claude/CLAUDE.md` の 2 行だけ（2026-10-02 から英語）: 「Replace: `sd` for replacing in a pipe or with a regex. To change a file, use `rpatch`, even for one spot …」と「Multi-line or multi-place replacements and insertions: `rpatch` (pass blocks on stdin; the format is in `rpatch --help`). Don't replace with a python heredoc」。
+- エージェントへの案内は `~/.claude/CLAUDE.md` の 2 行だけ（2026-10-02 から英語）: 「Replace: `sd` for replacing in a pipe or with a regex. To change a file, use `rpatch`, even for one spot …」と「Multi-line or multi-place replacements and insertions: `rpatch` (pass blocks on stdin; the format is in `rpatch --help`). Chain follow-up commands on the opening line … Don't replace with a python heredoc」。
 - エージェントは `rpatch --help | head -40` で読むことが多い。help は、書き方・ブロックの種類・Tips・出力・終了コードを先頭 37 行に収めている。help を変えるときは、この 40 行を崩さない。
 
 ## 主な判断（理由は handoff-history.md と git のログ）
@@ -50,6 +50,7 @@
 | 2026-10-02 | v0.8.0（`OLD part`）、help の組み替え、MCP の登録を外した |
 | 2026-10-02 02:25 | 「置換」の行を変えた: ファイルの書き換えは 1 か所でも rpatch、sd はパイプの中と正規表現だけ。直前 3 日の sd 174 件のうち約 155 件が 1 ファイルへの `sd -F` だった |
 | 2026-10-02 02:27 | CLAUDE.md 全体を英語にした（意味は変えていない）。02:25 の変更と近いので、前後の比較では 1 つの区切りとして扱う |
+| 2026-10-02 02:31 | rpatch の行に「後続コマンドは開始行に `&&` でつなぐ。閉じた EOF の後のコマンドは失敗を隠す」を足した。直前 24 時間の rpatch の失敗 45 件のうち 27 件で、後続のコマンドが終了コードを 0 にしていた（`dashboard.py` の「終了コードが隠れた失敗」で追える） |
 
 ## リポジトリと要望の受け方
 
