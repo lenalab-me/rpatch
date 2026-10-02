@@ -918,6 +918,35 @@ fn unclosed_block_points_at_markers_of_another_length() {
 }
 
 #[test]
+/// TO の行を書く前に入力が終わったら、そう伝え、前の完成したブロックも書かれていないと示す。
+fn input_ending_right_after_to_says_so_and_that_nothing_was_written() {
+    let dir = setup(&[("a.txt", "a\nb\nc\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n<<<<<<< FROM\nb\n<<<<<<< TO\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "the input ends right after the TO marker at line 9",
+    ))
+    .stderr(predicate::str::contains("the block before line 7 parsed"))
+    .stderr(predicate::str::contains("rpatch: nothing written"));
+    assert_eq!(read(&dir, "a.txt"), "a\nb\nc\n");
+}
+
+/// `rpatch <<'A' && cat > f <<'B'` で B の本文を先に書くと、rpatch はファイルの中身を読む。
+#[test]
+fn file_content_as_input_hints_at_heredoc_order() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(dir.path(), &[], "// a comment\nfn f() {}\n")
+        .code(2)
+        .stderr(predicate::str::contains(
+            "the body for rpatch must come first",
+        ));
+}
+
+#[test]
 fn mistyped_separator_length_is_named_instead_of_longer_markers() {
     let dir = setup(&[("a.txt", "a\n")]);
     rpatch_raw(

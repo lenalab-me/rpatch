@@ -269,6 +269,10 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
                     .any(|p| line.starts_with(p))
                 {
                     msg += "\n  hint: this is not a diff or patch format; write the old and the new text as they are";
+                } else if file.is_none() {
+                    // Seen with `rpatch <<'A' && cat > f <<'B'` and the bodies written in the
+                    // other order: rpatch then reads the file's content.
+                    msg += "\n  hint: with several heredocs on one command line, the shell hands out the bodies in the order the `<<` appear on the line, so the body for rpatch must come first";
                 }
                 // Guessed formats are the usual cause, so show the real one.
                 msg += "\n  the format is:\n    === path/to/file\n    <<<<<<< OLD\n    exact lines to replace\n    =======\n    replacement lines\n    >>>>>>> NEW\n  (`<<<<<<< OLD part` for part of a line; see `rpatch --help`)";
@@ -345,11 +349,39 @@ pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
             Part::Old | Part::To => format!("`{}` and `{}`", m.sep, m.close),
             Part::New => format!("`{}`", m.close),
         };
-        return Err(format!(
+        let mut msg = format!(
             "line {}: block is not closed (missing {missing}){}",
             b.start,
             b.length_hints()
-        ));
+        );
+        // The usual case: the input stops right after a part's marker, often a TO whose
+        // lines were not read yet. The blocks before it were fine but are not applied.
+        let empty = match b.part {
+            Part::Old | Part::From => b.first.is_empty(),
+            Part::To => b.second.is_empty(),
+            Part::New => false,
+        };
+        if empty {
+            let part = match b.part {
+                Part::To => "TO",
+                _ => b.kind.first_part(),
+            };
+            msg += &format!(
+                "\n  hint: the input ends right after the {part} marker at line {}; write its lines (read the file first if they are not known yet)",
+                b.part_start
+            );
+        }
+        if !edits.is_empty() {
+            let blocks = match edits.len() {
+                1 => "the block".to_string(),
+                n => format!("the {n} blocks"),
+            };
+            msg += &format!(
+                "\n  note: {blocks} before line {} parsed, but nothing is applied until the whole input does; send them again with this one fixed",
+                b.start
+            );
+        }
+        return Err(msg);
     }
     Ok(edits)
 }

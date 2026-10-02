@@ -112,7 +112,7 @@ impl Report {
 pub fn apply(text: &str, opts: PatchOptions, cwd: &Path) -> Result<String, PatchError> {
     let edits = input::parse(text).map_err(|message| PatchError {
         code: EXIT_INPUT,
-        message: format!("rpatch: {message}\n"),
+        message: format!("rpatch: {message}\nrpatch: nothing written\n"),
     })?;
 
     let mut report = Report::default();
