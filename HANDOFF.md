@@ -12,7 +12,7 @@
 ## 入れ方と、普段の使われ方
 
 - コードを変えたら `cargo install --locked --path .` で入れ直す（CLI だけ、0.8MB）。MCP を使い直すときは `--features mcp` で入れてから、`claude mcp add --transport stdio --scope user rpatch -- ~/.cargo/bin/rpatch mcp`、`codex mcp add rpatch -- ~/.cargo/bin/rpatch mcp` で登録する。
-- エージェントへの案内は `~/.claude/CLAUDE.md` の 2 行だけ（2026-10-02 から英語）: 「Replace: `sd` for replacing in a pipe or with a regex. To change a file, use `rpatch`, even for one spot …」と「Multi-line or multi-place replacements and insertions: `rpatch` (pass blocks on stdin; the format is in `rpatch --help`). Chain follow-up commands on the opening line … Don't replace with a python heredoc」。
+- エージェントへの案内は `~/.claude/CLAUDE.md` の 2 行だけ（Codex の `~/.codex/AGENTS.md` も 2026-10-03 から同じ内容。CLAUDE.md を変えたら AGENTS.md にもコピーする）（2026-10-02 から英語）: 「Replace: `sd` for replacing in a pipe or with a regex. To change a file, use `rpatch`, even for one spot …」と「Multi-line or multi-place replacements and insertions: `rpatch` (pass blocks on stdin; the format is in `rpatch --help`). Chain follow-up commands on the opening line … Don't replace with a python heredoc」。
 - エージェントは `rpatch --help | head -40` で読むことが多い。help は、書き方・ブロックの種類・Tips・出力・終了コードを先頭 37 行に収めている。help を変えるときは、この 40 行を崩さない。
 
 ## 主な判断（理由は handoff-history.md と git のログ）
@@ -54,6 +54,7 @@
 | 2026-10-02 08:02 | v0.9.0: 空の TO はファイルの最後まで。FROM を OLD のように使ったときの hint。その前の 805df2f（未リリース）で、書式エラーの hint（TO の直後で入力が終わった、heredoc の順番）と `nothing written` |
 | 2026-10-02 17:30 | フックを入れた: `~/.claude/settings.json` の PreToolUse（Bash）で `~/.claude/hooks/no-python-replace.py` を呼び、python の置換で書き込むコマンド（`python3 -c`・`python3 - <<`・`python3 <<` のうち `.replace(`/`re.sub(` と書き込みを含むもの）を拒否して rpatch を案内する。サブエージェントにも効く。過去のログ 6,748 回の Bash に当てると、metrics.py の `python_replace` 349 回のうち 345 回を止め、それ以外は止めなかった。以後 `python_replace` は 0 になるはずなので、拒否されたあとに何を使ったかを見る |
 | 2026-10-03 10:55 | v0.10.0: `rpatch FILE <<'EOF'` を受け付ける（`=== ` 行より前のブロックの対象）。10/2 からの Claude Code で `unknown argument` が 7 回あった。BEFORE/AFTER の文字列を 2 行以上にできる（Codex が 2 行以上を書いて 3 回失敗していた）。以後、この 2 つの失敗は 0 になるはず |
+| 2026-10-03 11:00 | Codex の `~/.codex/AGENTS.md` を `~/.claude/CLAUDE.md` と同じ内容にした（それまでは 10/1 の日本語版で、置換は `sd -F`、rpatch は複数行・複数箇所だけ、`--diff` を付ける、だった。元のファイルは `~/.codex/backups/AGENTS.md.20261003-before-claude-sync`）。以後、Codex で 1 か所の置換に rpatch を使うか、apply_patch がどれだけ残るかを見る |
 
 ## リポジトリと要望の受け方
 
