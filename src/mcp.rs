@@ -62,6 +62,7 @@ impl PatchServer {
                 rpatch::PatchOptions {
                     diff: args.diff,
                     dry_run: args.dry_run,
+                    file: None,
                 },
                 &cwd,
             )

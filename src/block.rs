@@ -217,9 +217,9 @@ impl Block {
     }
 }
 
-pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
+pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String> {
     let mut edits = Vec::new();
-    let mut file: Option<String> = None;
+    let mut file: Option<String> = default_file.map(String::from);
     let mut block: Option<Block> = None;
 
     for (i, raw) in text.lines().enumerate() {

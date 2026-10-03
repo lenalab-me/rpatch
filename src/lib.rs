@@ -21,10 +21,12 @@ const EXIT_MISMATCH: u8 = 1;
 const EXIT_INPUT: u8 = 2;
 const EXIT_IO: u8 = 3;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct PatchOptions {
     pub diff: bool,
     pub dry_run: bool,
+    /// The file for blocks that come before any `=== <file>` line (`rpatch FILE`).
+    pub file: Option<String>,
 }
 
 #[derive(Debug)]
@@ -110,7 +112,7 @@ impl Report {
 /// Applies the same input and options as the CLI, resolving paths against `cwd`.
 /// Returns CLI output as text; it never writes to stdout or stderr.
 pub fn apply(text: &str, opts: PatchOptions, cwd: &Path) -> Result<String, PatchError> {
-    let edits = input::parse(text).map_err(|message| PatchError {
+    let edits = input::parse(text, opts.file.as_deref()).map_err(|message| PatchError {
         code: EXIT_INPUT,
         message: format!("rpatch: {message}\nrpatch: nothing written\n"),
     })?;

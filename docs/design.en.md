@@ -15,7 +15,8 @@ Usage: `rpatch --help`. The MCP server: [mcp.md](mcp.md) (Japanese). Japanese ve
 
 1. **Parse** (`input.rs`, `block.rs`)
    - If the input starts with `{` (after whitespace), it is JSON; otherwise it is the block format.
-   - Both become a list of `Edit`, which is then validated as a whole (`input::validate`). An empty OLD, `old == new`, a BEFORE/AFTER text of two or more lines, nothing to insert, and `count=0` are input errors (exit 2).
+   - In the block format, the CLI's file argument (`rpatch FILE`) is the file for blocks before the first `=== <file>` line. Agents often wrote `rpatch FILE <<'EOF'` and failed (2026-10-03, 7 times in Claude Code). At most one file; not for JSON input.
+   - Both become a list of `Edit`, which is then validated as a whole (`input::validate`). An empty OLD, `old == new`, an empty BEFORE/AFTER text, nothing to insert, and `count=0` are input errors (exit 2).
 2. **Load** (`load_files` in `lib.rs`)
    - Each file named by the edits is read once. Paths are resolved against `cwd` with `canonicalize`, so different spellings of the same file (`a.txt` and `./a.txt`, a symlink and its target) become one. A symlink's target is what gets edited.
    - A file that is not UTF-8 fails to load (exit 3). A leading BOM is removed and remembered; it takes no part in matching.
@@ -59,7 +60,7 @@ An `Edit` has a target (`Target`), the replacement (`new`), and the exact number
 | `<<<<<<< OLD` | `Text` | Only at line starts; whole lines |
 | `<<<<<<< OLD part` | `Text` (`part`) | Anywhere; without the final line break |
 | `<<<<<<< FROM` / `TO` | `Range` | Only at line starts; the last line may be just the start of a line |
-| `<<<<<<< BEFORE` / `AFTER` | `Insert` | Anywhere (part of one line); lines are inserted at line boundaries |
+| `<<<<<<< BEFORE` / `AFTER` | `Insert` | Anywhere (part of one or more lines); lines are inserted at line boundaries |
 | JSON `old` | `Text` | Anywhere |
 | JSON `from` / `to` | `Range` | Anywhere |
 
@@ -86,7 +87,7 @@ An `Edit` has a target (`Target`), the replacement (`new`), and the exact number
 
 ### BEFORE / AFTER
 
-- The anchor is one line (or part of one) and must match exactly `count` times. Two matches on the same line are an error.
+- The anchor is one or more lines (or part of them) and must match exactly `count` times. Two matches on the same line are an error. BEFORE inserts before the line where the match starts, AFTER after the line where it ends. Anchors of two or more lines arrived in v0.10.0 (before, only one line was allowed, and Codex often wrote more and failed).
 - No existing line is rewritten; NEW's lines are inserted at the line boundary before or after the line containing the anchor. Several AFTER blocks on one anchor end up in reverse order, since each goes right below the anchor.
 
 ## Diagnostics

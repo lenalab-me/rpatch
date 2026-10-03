@@ -1197,18 +1197,52 @@ fn unknown_flag_prints_a_short_usage() {
         .stderr(predicate::str::contains("Block format").not());
 }
 
+#[test]
+fn file_argument_names_the_file_for_blocks_before_any_header() {
+    let dir = setup(&[("a.txt", "a\n"), ("b.txt", "b\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n=== b.txt\n<<<<<<< OLD\nb\n=======\nB\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("M a.txt"));
+    assert_eq!(read(&dir, "a.txt"), "A\n");
+    assert_eq!(read(&dir, "b.txt"), "B\n");
+}
+
+#[test]
+fn file_argument_takes_one_file_and_only_the_block_format() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(dir.path(), &["a.txt", "b.txt"], "")
+        .code(2)
+        .stderr(predicate::str::contains("at most one file"));
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        r#"{"edits": [{"file": "a.txt", "old": "a", "new": "A"}]}"#,
+    )
+    .code(2)
+    .stderr(predicate::str::contains("only with the block format"));
+    assert_eq!(read(&dir, "a.txt"), "a\n");
+}
+
 // --- v0.5.0 の確認メモ -------------------------------------
 
 #[test]
-fn insert_anchor_must_be_a_single_line() {
-    let dir = setup(&[("a.txt", "a\nb long\nc\n")]);
+fn insert_anchor_may_span_lines() {
+    // BEFORE goes before the line where the match starts, AFTER after the line where it ends.
+    let dir = setup(&[("a.txt", "f() {\n  one\n}\nf() {\n  two\n}\n")]);
     rpatch_raw(
         dir.path(),
         &[],
-        "=== a.txt\n<<<<<<< AFTER\nb long\nc\n=======\nx\n>>>>>>> NEW\n",
+        "=== a.txt\n<<<<<<< AFTER\nf() {\n  two\n=======\n  added\n>>>>>>> NEW\n<<<<<<< BEFORE\n  one\n}\n=======\n  // first\n>>>>>>> NEW\n",
     )
-    .code(2)
-    .stderr(predicate::str::contains("must be a single line"));
+    .success();
+    assert_eq!(
+        read(&dir, "a.txt"),
+        "f() {\n  // first\n  one\n}\nf() {\n  two\n  added\n}\n"
+    );
 }
 
 #[test]

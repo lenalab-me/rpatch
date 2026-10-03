@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use rpatch::PatchOptions;
 
 const USAGE: &str = include_str!("help.txt");
-const SHORT_USAGE: &str = "usage: rpatch [--diff] [--dry-run] <<'EOF' ... EOF   (see `rpatch --help` for the input format)";
+const SHORT_USAGE: &str = "usage: rpatch [--diff] [--dry-run] [FILE] <<'EOF' ... EOF   (see `rpatch --help` for the input format)";
 #[cfg(feature = "mcp")]
 const MCP_USAGE: &str = "usage: rpatch mcp [--cwd <directory>]\nRuns a local MCP server over stdin/stdout. Relative edit paths use --cwd (default: current directory).";
 
@@ -65,9 +65,19 @@ fn parse_args(args: &[String]) -> Result<Option<PatchOptions>, u8> {
                 println!("rpatch {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
             }
-            _ => {
+            _ if arg.starts_with('-') => {
                 eprintln!("rpatch: unknown argument: {arg}\n{SHORT_USAGE}");
                 return Err(2);
+            }
+            // `rpatch FILE <<'EOF'`: the file for blocks without a `=== <file>` line.
+            _ => {
+                if let Some(first) = &opts.file {
+                    eprintln!(
+                        "rpatch: give at most one file argument (got `{first}` and `{arg}`); for several files, put `=== <file>` lines in the input\n{SHORT_USAGE}"
+                    );
+                    return Err(2);
+                }
+                opts.file = Some(arg.clone());
             }
         }
     }

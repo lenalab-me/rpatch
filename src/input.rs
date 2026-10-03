@@ -54,12 +54,18 @@ struct JsonEdit {
     count: Option<usize>,
 }
 
-/// Parses JSON (input starting with `{`) or the block format.
-pub fn parse(text: &str) -> Result<Vec<Edit>, String> {
+/// Parses JSON (input starting with `{`) or the block format. `file` is the file for
+/// blocks before any `=== <file>` line.
+pub fn parse(text: &str, file: Option<&str>) -> Result<Vec<Edit>, String> {
     let edits = if text.trim_start().starts_with('{') {
+        if let Some(file) = file {
+            return Err(format!(
+                "a file argument (`{file}`) works only with the block format; JSON edits name their files in \"file\""
+            ));
+        }
         parse_json(text)?
     } else {
-        block::parse(text)?
+        block::parse(text, file)?
     };
     validate(&edits)?;
     Ok(edits)
@@ -168,13 +174,6 @@ fn validate(edits: &[Edit]) -> Result<(), String> {
             Target::Insert { anchor, after } if anchor.trim().is_empty() => {
                 let which = if *after { "AFTER" } else { "BEFORE" };
                 return Err(format!("{label}: the {which} text is empty"));
-            }
-            Target::Insert { anchor, after } if anchor.trim_end_matches('\n').contains('\n') => {
-                let which = if *after { "AFTER" } else { "BEFORE" };
-                return Err(format!(
-                    "{label}: the {which} text must be a single line (it has {}); one line, or part of one, is enough to find the place",
-                    anchor.lines().count()
-                ));
             }
             Target::Insert { .. } if e.new.is_empty() => {
                 return Err(format!(

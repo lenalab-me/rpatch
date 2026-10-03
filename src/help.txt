@@ -9,7 +9,8 @@ replacement lines (empty to delete the lines)
 >>>>>>> NEW
 EOF
 
-Blocks (any number, after one or more `=== <file>` lines):
+Blocks (any number, after one or more `=== <file>` lines; with one file, it can be
+an argument instead: `rpatch path/to/file <<'EOF'`):
   <<<<<<< OLD              whole lines, matched only at line starts, exactly once
   <<<<<<< OLD count=N      exactly N matches, all replaced
   <<<<<<< OLD part         any part of a line (or of several lines), without the
@@ -21,8 +22,9 @@ Blocks (any number, after one or more `=== <file>` lines):
                            NEW must not end with it. The last line of FROM and TO may
                            be just the start of a line
   <<<<<<< BEFORE / <<<<<<< AFTER / ======= / >>>>>>> NEW   (count=N allowed)
-                           insert the NEW lines before/after the line that contains
-                           the text (any part of one line); no line is rewritten
+                           insert the NEW lines before/after the lines that contain
+                           the text (any part of one or more lines); no line is
+                           rewritten
 
 Tips:
   - Quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
