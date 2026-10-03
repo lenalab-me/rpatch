@@ -4,7 +4,7 @@
 
 ## いまの状態
 
-- v0.9.0。Claude Code（と Codex）が Bash から呼ぶ CLI として、普段の作業で使っている。
+- v0.10.0。Claude Code（と Codex）が Bash から呼ぶ CLI として、普段の作業で使っている。
 - MCP サーバーは Cargo feature `mcp`（既定ではオフ）にある。2026-10-02 に Claude Code と Codex の登録を外し、手元も MCP なしで入れている。
 - 仕様と設計は `docs/design.md`（英語版 `docs/design.en.md`）、LLM 向けの入口は `llms.txt`、使い方は `rpatch --help`。
 - 試用レビュー、実験の記録、集計の結果、CLI と MCP の比較実験の一式は、リポジトリの外の `~/project/prod/rpatch-notes/` に置く。
@@ -53,6 +53,7 @@
 | 2026-10-02 02:31 | rpatch の行に「後続コマンドは開始行に `&&` でつなぐ。閉じた EOF の後のコマンドは失敗を隠す」を足した。直前 24 時間の rpatch の失敗 45 件のうち 27 件で、後続のコマンドが終了コードを 0 にしていた（`dashboard.py` の「終了コードが隠れた失敗」で追える） |
 | 2026-10-02 08:02 | v0.9.0: 空の TO はファイルの最後まで。FROM を OLD のように使ったときの hint。その前の 805df2f（未リリース）で、書式エラーの hint（TO の直後で入力が終わった、heredoc の順番）と `nothing written` |
 | 2026-10-02 17:30 | フックを入れた: `~/.claude/settings.json` の PreToolUse（Bash）で `~/.claude/hooks/no-python-replace.py` を呼び、python の置換で書き込むコマンド（`python3 -c`・`python3 - <<`・`python3 <<` のうち `.replace(`/`re.sub(` と書き込みを含むもの）を拒否して rpatch を案内する。サブエージェントにも効く。過去のログ 6,748 回の Bash に当てると、metrics.py の `python_replace` 349 回のうち 345 回を止め、それ以外は止めなかった。以後 `python_replace` は 0 になるはずなので、拒否されたあとに何を使ったかを見る |
+| 2026-10-03 10:55 | v0.10.0: `rpatch FILE <<'EOF'` を受け付ける（`=== ` 行より前のブロックの対象）。10/2 からの Claude Code で `unknown argument` が 7 回あった。BEFORE/AFTER の文字列を 2 行以上にできる（Codex が 2 行以上を書いて 3 回失敗していた）。以後、この 2 つの失敗は 0 になるはず |
 
 ## リポジトリと要望の受け方
 
