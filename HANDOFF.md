@@ -12,7 +12,7 @@
 ## 入れ方と、普段の使われ方
 
 - コードを変えたら `cargo install --locked --path .` で入れ直す（CLI だけ、0.8MB）。MCP を使い直すときは `--features mcp` で入れてから、`claude mcp add --transport stdio --scope user rpatch -- ~/.cargo/bin/rpatch mcp`、`codex mcp add rpatch -- ~/.cargo/bin/rpatch mcp` で登録する。
-- エージェントへの案内は `~/.claude/CLAUDE.md` の 2 行だけ（Codex の `~/.codex/AGENTS.md` も 2026-10-03 から同じ内容。CLAUDE.md を変えたら AGENTS.md にもコピーする）（2026-10-02 から英語）: 「Replace: `sd` for replacing in a pipe or with a regex. To change a file, use `rpatch`, even for one spot …」と「Multi-line or multi-place replacements and insertions: `rpatch` (pass blocks on stdin; the format is in `rpatch --help`). Chain follow-up commands on the opening line … Don't replace with a python heredoc」。
+- エージェントへの案内は `~/.claude/CLAUDE.md` の 2 行だけ（Codex の `~/.codex/AGENTS.md` と Cursor の `~/.cursor/rules/global.mdc` も 2026-10-03 から同じ内容。CLAUDE.md を変えたら両方にコピーする。ただし T3 から delegate した Cursor の子にはルールが届かないので、タスクの文に書く）（2026-10-02 から英語）: 「Replace: `sd` for replacing in a pipe or with a regex. To change a file, use `rpatch`, even for one spot …」と「Multi-line or multi-place replacements and insertions: `rpatch` (pass blocks on stdin; the format is in `rpatch --help`). Chain follow-up commands on the opening line … Don't replace with a python heredoc」。
 - エージェントは `rpatch --help | head -40` で読むことが多い。help は、書き方・ブロックの種類・Tips・出力・終了コードを先頭 37 行に収めている。help を変えるときは、この 40 行を崩さない。
 
 ## 主な判断（理由は handoff-history.md と git のログ）
