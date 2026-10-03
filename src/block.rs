@@ -269,6 +269,16 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                     .any(|p| line.starts_with(p))
                 {
                     msg += "\n  hint: this is not a diff or patch format; write the old and the new text as they are";
+                } else if text
+                    .lines()
+                    .nth(i + 1)
+                    .is_some_and(|next| parse_opener(n + 1, next.trim_end()).is_some())
+                {
+                    // Seen from Codex: the file line written without its `=== `.
+                    msg += &format!(
+                        "\n  hint: a file line starts with `=== `; write `=== {}`",
+                        line.trim()
+                    );
                 } else if file.is_none() {
                     // Seen with `rpatch <<'A' && cat > f <<'B'` and the bodies written in the
                     // other order: rpatch then reads the file's content.

@@ -1227,6 +1227,20 @@ fn file_argument_takes_one_file_and_only_the_block_format() {
     assert_eq!(read(&dir, "a.txt"), "a\n");
 }
 
+#[test]
+fn file_line_without_its_prefix_gets_a_hint() {
+    // Seen from Codex: `config.js` instead of `=== config.js`.
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("write `=== a.txt`"))
+    .stderr(predicate::str::contains("several heredocs").not());
+}
+
 // --- v0.5.0 の確認メモ -------------------------------------
 
 #[test]
