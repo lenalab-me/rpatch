@@ -562,13 +562,18 @@ fn part_preview(
         .split('\n')
         .map(|l| l.trim_end_matches('\r'))
         .collect();
-    let idx = LineIndex::new(content);
-    let mut shown = Vec::new();
-    if !head.is_empty() || tail.is_empty() {
-        shown.push(gutter(idx.line_of(p), lines[0]));
-    }
-    if !tail.is_empty() && (lines.len() > 1 || shown.is_empty()) {
-        shown.push(gutter(idx.line_of(end), lines[lines.len() - 1]));
+    // All the lines, not only the cut one: when NEW adds lines before it, the cut
+    // line alone reads unchanged and hides what the edit does (seen 2026-10-06).
+    const MAX_LINES: usize = 8;
+    let first = LineIndex::new(content).line_of(p);
+    let numbered = |k: usize| gutter(first + k, lines[k]);
+    let mut shown: Vec<String> = Vec::new();
+    if lines.len() <= MAX_LINES {
+        shown.extend((0..lines.len()).map(numbered));
+    } else {
+        shown.extend((0..4).map(numbered));
+        shown.push(format!("… {} more lines", lines.len() - 7));
+        shown.extend((lines.len() - 3..lines.len()).map(numbered));
     }
     let opener = if count == 1 {
         "<<<<<<< OLD part".to_string()
@@ -576,12 +581,12 @@ fn part_preview(
         format!("<<<<<<< OLD part count={count}")
     };
     let mut out = vec![format!(
-        "with `{opener}` and the same OLD and NEW, the other text on the line is kept{}:",
+        "with `{opener}` and the same OLD and NEW, the other text on the line is kept, and the lines read{}:",
         if count > 1 { " (first match)" } else { "" }
     )];
     out.extend(shown);
     out.push(format!(
-        "hint: if that is the line you want, change only the opener to `{opener}`; if not, copy the whole line into OLD and write the whole new line in NEW; to only add lines next to it, use BEFORE/AFTER"
+        "hint: if those are the lines you want, change only the opener to `{opener}`; if not, copy the whole line into OLD and write the whole new line in NEW; to only add lines next to it, use BEFORE/AFTER"
     ));
     Some(out)
 }

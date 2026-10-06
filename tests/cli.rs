@@ -2127,7 +2127,7 @@ fn partial_old_shows_the_line_that_old_part_would_give() {
     )
     .code(1)
     .stderr(predicate::str::contains(
-        "with `<<<<<<< OLD part` and the same OLD and NEW, the other text on the line is kept:\n       2 | short line with a lot of text after it\n",
+        "with `<<<<<<< OLD part` and the same OLD and NEW, the other text on the line is kept, and the lines read:\n       2 | short line with a lot of text after it\n",
     ))
     .stderr(predicate::str::contains(
         "change only the opener to `<<<<<<< OLD part`",
@@ -2142,4 +2142,14 @@ fn partial_old_shows_the_line_that_old_part_would_give() {
         "       2 | long line, all new with a lot of text after it\n",
     ));
     assert_eq!(read(&dir, "a.md"), original);
+    // 切れた行の前に行を足すときは、足した行も見せる（切れた行だけだと元と同じに見えた）。
+    rpatch_raw(
+        dir.path(),
+        &["a.md"],
+        "<<<<<<< OLD\n#\nlong line\n=======\n#\nadded\nlong line\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "       1 | #\n       2 | added\n       3 | long line with a lot of text after it\n",
+    ));
 }
