@@ -11,7 +11,7 @@
 import argparse, glob, json, os, re, unicodedata
 from datetime import datetime
 
-from metrics import PY, REPLACE, RPATCH_FAILED, SD, WRITE, rpatch_call
+from metrics import HOOK_BLOCKED, PY, REPLACE, RPATCH_FAILED, SD, WRITE, rpatch_call
 
 ROOT = os.path.expanduser('~/.claude/projects')
 DEFAULT_EXCLUDE = ('prod-rpatch', 'pi-agent')
@@ -19,7 +19,8 @@ HEREDOC_WRITE = re.compile(r'(^|[;&|(\n])\s*(cat|tee)\s+(-a\s+)?>{0,2}\s*\S+\s*<
 NODE = re.compile(r'(^|[;&|(\n])\s*node\s')
 # rpatch 自身のエラー行（連ねた cargo などの "error:" と区別するため、rpatch の書式に限る）
 RPATCH_ERROR = re.compile(r'^(rpatch: (?!nothing written).*|error: edits\[.*)$', re.M)
-COLUMNS = ['rpatch', '失敗', 'help', 'sd', 'cat>', 'Edit', 'Write', 'py置換', 'py他', 'node']
+# py阻止: python の置換がフックに止められた（何も書いていない）
+COLUMNS = ['rpatch', '失敗', 'help', 'sd', 'cat>', 'Edit', 'Write', 'py置換', 'py阻止', 'py他', 'node']
 # 失敗の種類。上から順に、出力に最初に当たったもの
 FAILURE_KINDS = [
     (r'mixes LF and CRLF', '改行の混在'),
@@ -126,7 +127,9 @@ def classify(u):
     if call:
         return ('rpatch', {os.path.basename(f) for f in call[2]}) if call[1] else ('help', None)
     if PY.search(cmd):
-        return ('py置換' if REPLACE.search(cmd) and WRITE.search(cmd) else 'py他'), None
+        if REPLACE.search(cmd) and WRITE.search(cmd):
+            return ('py阻止' if HOOK_BLOCKED.search(u['res']) else 'py置換'), None
+        return 'py他', None
     if SD.search(cmd):
         return 'sd', None
     if HEREDOC_WRITE.search(cmd):

@@ -11,6 +11,8 @@ REPLACE = re.compile(r'\.replace\(|\bre\.sub\(')
 WRITE = re.compile(r"""open\([^)]*['"]w['"]|write_text\(|\.write\(""")
 GUARD = re.compile(r'\bassert\b|\braise\b|\.count\(')
 PY_FAIL = re.compile(r'Traceback|AssertionError')
+# PreToolUse フック（~/.claude/hooks/no-python-replace.py）が止めた呼び出し。何も書いていない
+HOOK_BLOCKED = re.compile(r'Blocked by a hook')
 # コマンドの位置で呼んでいるものだけ（`cd .../rpatch` や `for n in rpatch ...` は数えない）。
 # 前に VAR=value や time・env・command が付いてもよい。mask() をかけた文字列に当てる
 RPATCH = re.compile(
@@ -282,7 +284,9 @@ def main():
             tool, inp, res = c['tool'], c.get('input') or {}, c.get('res') or ''
             if tool == 'Bash':
                 cmd = inp.get('command') or ''
-                if PY.search(cmd) and REPLACE.search(cmd) and WRITE.search(cmd):
+                if PY.search(cmd) and REPLACE.search(cmd) and WRITE.search(cmd) and HOOK_BLOCKED.search(res):
+                    n['python_replace_blocked'] += 1
+                elif PY.search(cmd) and REPLACE.search(cmd) and WRITE.search(cmd):
                     n['python_replace'] += 1
                     if not GUARD.search(cmd):
                         n['python_replace_unguarded'] += 1
@@ -328,7 +332,7 @@ def main():
         'since': a.since, 'until': a.until, 'exclude_proj': a.exclude_proj, 'only_proj': a.only_proj,
         'sessions': len(sessions),
         **{k: n[k] for k in [
-            'tool_calls', 'python_replace', 'python_replace_unguarded', 'python_replace_failed',
+            'tool_calls', 'python_replace', 'python_replace_blocked', 'python_replace_unguarded', 'python_replace_failed',
             'edit', 'edit_same_file_consecutive', 'edit_failed',
             'rpatch', 'rpatch_mcp', 'rpatch_dry_run', 'rpatch_failed', 'rpatch_failed_real',
             'rpatch_discovery',
