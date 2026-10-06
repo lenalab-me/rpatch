@@ -13,6 +13,8 @@ GUARD = re.compile(r'\bassert\b|\braise\b|\.count\(')
 PY_FAIL = re.compile(r'Traceback|AssertionError')
 # PreToolUse フック（~/.claude/hooks/no-python-replace.py）が止めた呼び出し。何も書いていない
 HOOK_BLOCKED = re.compile(r'Blocked by a hook')
+# edit_guard.py が理由の末尾に付ける規則の名前。付いていないのは初代のフック（python の置換だけ）
+HOOK_RULE = re.compile(r'\[edit-guard: ([\w-]+)\]')
 # コマンドの位置で呼んでいるものだけ（`cd .../rpatch` や `for n in rpatch ...` は数えない）。
 # 前に VAR=value や time・env・command が付いてもよい。mask() をかけた文字列に当てる
 RPATCH = re.compile(
@@ -272,6 +274,7 @@ def main():
         sessions[(c['proj'], c['file'])].append(c)
 
     n = collections.Counter()
+    hook_blocked = collections.Counter()
     rework_stats = collections.defaultdict(lambda: collections.defaultdict(int) | {
         'recovery_calls': [], 'recovery_secs': [], 'failure_chars': [],
         'context_lens': []})
@@ -284,6 +287,9 @@ def main():
             tool, inp, res = c['tool'], c.get('input') or {}, c.get('res') or ''
             if tool == 'Bash':
                 cmd = inp.get('command') or ''
+                if HOOK_BLOCKED.search(res):
+                    m = HOOK_RULE.search(res)
+                    hook_blocked[m.group(1) if m else 'python-replace'] += 1
                 if PY.search(cmd) and REPLACE.search(cmd) and WRITE.search(cmd) and HOOK_BLOCKED.search(res):
                     n['python_replace_blocked'] += 1
                 elif PY.search(cmd) and REPLACE.search(cmd) and WRITE.search(cmd):
@@ -340,6 +346,7 @@ def main():
         'replace_failed_total': n['python_replace_failed'] + n['edit_failed'] + n['rpatch_failed'],
         'share_python_replace': round(n['python_replace'] / edits, 3) if edits else None,
         'python_replace_per_1k_calls': round(1000 * n['python_replace'] / n['tool_calls'], 1) if n['tool_calls'] else None,
+        'hook_blocked': dict(hook_blocked),
         'rework': summarize(rework_stats),
     }
     print(json.dumps(out, ensure_ascii=False, indent=2))

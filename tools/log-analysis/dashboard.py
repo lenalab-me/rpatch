@@ -103,6 +103,20 @@ def breakdown_html(fails):
             + rows + '</table></div>')
 
 
+def blocked_html(blocked):
+    """フックが止めた書き込みを規則ごとに。止めたあと何で書いたかも。"""
+    groups = collections.defaultdict(list)
+    for b in blocked:
+        groups[b['rule']].append(b)
+    rows = ''
+    for rule, bs in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        vias = collections.Counter(b['via'] or '（なし）' for b in bs).most_common(4)
+        rows += (f'<tr><td>{e(rule)}</td><td class="n">{len(bs)}</td>'
+                 f'<td class="muted">{"、".join(f"{e(v)} {n}" for v, n in vias)}</td></tr>')
+    return ('<h2>フックが止めた書き込み</h2><div class="wrap"><table><tr><th>規則</th><th class="n">件数</th>'
+            '<th>そのあと何で書いたか</th></tr>' + rows + '</table></div>')
+
+
 def overview(hours, show_all):
     sessions = recent(hours=hours, exclude=() if show_all else DEFAULT_EXCLUDE)
     edits = lambda s: s['total']['rpatch'] + s['total']['py置換'] + s['total']['Edit'] + s['total']['sd']
@@ -124,6 +138,7 @@ prod-rpatch・pi-agent も含める</label></form>
 <div class="tile"><span class="muted">rpatch の失敗</span><b class="bad">{total['失敗']}</b><span class="muted">{rate}</span></div>
 <div class="tile"><span class="muted">終了コードが隠れた失敗</span><b class="warn">{masked}</b></div>
 <div class="tile"><span class="muted">python での置換</span><b class="warn">{total['py置換']}</b></div>
+<div class="tile"><span class="muted">フックが止めた</span><b>{total['阻止']}</b></div>
 <div class="tile"><span class="muted">Edit ツール</span><b>{total['Edit']}</b></div>
 <div class="tile"><span class="muted">sd</span><b>{total['sd']}</b></div>
 </div>
@@ -141,6 +156,9 @@ prod-rpatch・pi-agent も含める</label></form>
     fails = sorted(((f, s) for s in active for f in s['failures']), key=lambda x: x[0]['ts'], reverse=True)
     if fails:
         body += breakdown_html([f for f, _ in fails])
+    blocked = [b for s in active for b in s['blocked']]
+    if blocked:
+        body += blocked_html(blocked)
     body += f'<h2>最近の rpatch の失敗（新しい順、{min(len(fails), 30)} / {len(fails)} 件）</h2>'
     body += ''.join(failure_html(f, link=f'/s?path={quote(s["rel"])}') for f, s in fails[:30])
     if not fails:

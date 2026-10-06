@@ -19,8 +19,10 @@ HEREDOC_WRITE = re.compile(r'(^|[;&|(\n])\s*(cat|tee)\s+(-a\s+)?>{0,2}\s*\S+\s*<
 NODE = re.compile(r'(^|[;&|(\n])\s*node\s')
 # rpatch 自身のエラー行（連ねた cargo などの "error:" と区別するため、rpatch の書式に限る）
 RPATCH_ERROR = re.compile(r'^(rpatch: (?!nothing written).*|error: edits\[.*)$', re.M)
-# py阻止: python の置換がフックに止められた（何も書いていない）
-COLUMNS = ['rpatch', '失敗', 'help', 'sd', 'cat>', 'Edit', 'Write', 'py置換', 'py阻止', 'py他', 'node']
+# 阻止: フック（edit_guard.py。それより前は no-python-replace.py）が止めた呼び出し。何も書いていない
+COLUMNS = ['rpatch', '失敗', 'help', 'sd', 'cat>', 'Edit', 'Write', 'py置換', '阻止', 'py他', 'node']
+# 止めた規則。edit_guard.py は理由の末尾に付ける。付いていないのは python の置換を止めた初代のフック
+HOOK_RULE = re.compile(r'\[edit-guard: ([\w-]+)\]')
 # 失敗の種類。上から順に、出力に最初に当たったもの
 FAILURE_KINDS = [
     (r'mixes LF and CRLF', '改行の混在'),
@@ -123,13 +125,13 @@ def classify(u):
         return 'Write', None
     if tool != 'Bash':
         return None, None
+    if HOOK_BLOCKED.search(u['res']):
+        return '阻止', None
     call = rpatch_call(cmd)
     if call:
         return ('rpatch', {os.path.basename(f) for f in call[2]}) if call[1] else ('help', None)
     if PY.search(cmd):
-        if REPLACE.search(cmd) and WRITE.search(cmd):
-            return ('py阻止' if HOOK_BLOCKED.search(u['res']) else 'py置換'), None
-        return 'py他', None
+        return ('py置換' if REPLACE.search(cmd) and WRITE.search(cmd) else 'py他'), None
     if SD.search(cmd):
         return 'sd', None
     if HEREDOC_WRITE.search(cmd):
@@ -163,7 +165,7 @@ def analyze(path):
     key = (path, tuple(os.path.getmtime(t) for t, _ in parts))
     if _cache.get(path, (None,))[0] == key:
         return _cache[path][1]
-    rows, failures, span = [], [], []
+    rows, failures, blocked, span = [], [], [], []
     first_prompt = None
     for t, name in parts:
         uses, prompt = load(t)
@@ -175,6 +177,10 @@ def analyze(path):
             if not kind:
                 continue
             counts[kind] += 1
+            if kind == '阻止':
+                m = HOOK_RULE.search(u['res'])
+                blocked.append({'ts': local(u['ts']), 'name': name, 'rule': m.group(1) if m else 'python-replace',
+                                'via': next_edit(uses[i + 1:]), 'input': u['input'].get('command') or ''})
             if kind != 'rpatch':
                 continue
             cmd = u['input'].get('command') or ''
@@ -196,6 +202,7 @@ def analyze(path):
         'rows': rows,
         'total': {c: sum(r[c] for _, r in rows) for c in COLUMNS},
         'failures': failures,
+        'blocked': blocked,
         'masked': sum(1 for f in failures if f['masked']),
     }
     _cache[path] = (key, result)
@@ -219,6 +226,19 @@ def recovered_by(after, files):
         if kind in ('Edit', 'Write') and os.path.basename(v['input'].get('file_path') or '') in (files or ()):
             return kind
         if kind in ('sd', 'py置換', 'cat>'):
+            return kind
+    return None
+
+
+def next_edit(after):
+    """フックに止められたあと、次に書き込んだ方法。ほかに止められた呼び出しは飛ばす。ファイルは
+    特定しない（止めた理由の書式が規則ごとに違うため）。"""
+    for v in after:
+        kind, _ = classify(v)
+        if kind == 'rpatch' and not failed(v):
+            used = sorted(set(BLOCK_KIND.findall(v['input'].get('command') or '')))
+            return 'rpatch ' + '+'.join(used) if used else 'rpatch'
+        if kind in ('Edit', 'Write', 'sd', 'py置換', 'cat>'):
             return kind
     return None
 
