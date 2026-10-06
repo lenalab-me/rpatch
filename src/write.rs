@@ -12,13 +12,20 @@ pub struct Pending<'a> {
     pub perms: &'a Permissions,
 }
 
-/// Writes every file, or none: if a write fails, files already written are restored.
-pub fn commit(files: &[Pending]) -> Result<(), String> {
+/// Fails if a file is read-only, which rename would replace all the same. Run before a
+/// dry run too, so that it fails where the real run would.
+pub fn check(files: &[Pending]) -> Result<(), String> {
     for f in files {
         if f.perms.readonly() {
             return Err(format!("{}: file is read-only; nothing written", f.display));
         }
     }
+    Ok(())
+}
+
+/// Writes every file, or none: if a write fails, files already written are restored.
+pub fn commit(files: &[Pending]) -> Result<(), String> {
+    check(files)?;
     for (i, f) in files.iter().enumerate() {
         if let Err(e) = write_atomic(f.path, f.prefix, f.content, f.perms) {
             let failed: Vec<&str> = files[..i]

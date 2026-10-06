@@ -36,10 +36,12 @@ pub fn count_mismatch(
         )
     } else if field != "old" {
         format!("hint: add surrounding text to \"{field}\" so that it matches once")
-    } else if block {
+    } else if block && found > expected {
         format!(
             "hint: add surrounding lines to OLD to pick one, or open the block with `<<<<<<< OLD count={found}` to replace all"
         )
+    } else if block {
+        format!("hint: open the block with `<<<<<<< OLD count={found}` if that is intended")
     } else if found > expected {
         format!(
             "hint: add surrounding text to \"old\" to pick one, or set \"count\": {found} to replace all"

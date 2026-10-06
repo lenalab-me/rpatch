@@ -128,36 +128,45 @@ pub fn apply(text: &str, opts: PatchOptions, cwd: &Path) -> Result<String, Patch
         });
     }
 
-    if !opts.dry_run {
-        let pending: Vec<write::Pending> = files
-            .iter()
-            .filter(|f| f.content != f.original)
-            .map(|f| write::Pending {
-                display: &f.display,
-                path: &f.path,
-                original: &f.original,
-                content: &f.content,
-                prefix: if f.bom { "\u{feff}" } else { "" },
-                perms: &f.perms,
-            })
-            .collect();
-        if let Err(msg) = write::commit(&pending) {
-            return Err(PatchError {
-                code: EXIT_IO,
-                message: format!("rpatch: {msg}\n"),
-            });
-        }
+    let pending: Vec<write::Pending> = files
+        .iter()
+        .filter(|f| f.content != f.original)
+        .map(|f| write::Pending {
+            display: &f.display,
+            path: &f.path,
+            original: &f.original,
+            content: &f.content,
+            prefix: if f.bom { "\u{feff}" } else { "" },
+            perms: &f.perms,
+        })
+        .collect();
+    let written = if opts.dry_run {
+        write::check(&pending)
+    } else {
+        write::commit(&pending)
+    };
+    if let Err(msg) = written {
+        return Err(PatchError {
+            code: EXIT_IO,
+            message: format!("rpatch: {msg}\n"),
+        });
     }
 
     let mut out = String::new();
     for f in &files {
-        let _ = writeln!(
-            out,
-            "M {}  edits={}  at_lines={}",
-            f.display,
-            f.applied.len(),
-            f.changed_lines()
-        );
+        if f.content == f.original {
+            // Edits that cancel out, or a range replaced with the same lines: `M` and
+            // at_lines would claim a change that is not there.
+            let _ = writeln!(out, "= {}  edits={}  unchanged", f.display, f.applied.len());
+        } else {
+            let _ = writeln!(
+                out,
+                "M {}  edits={}  at_lines={}",
+                f.display,
+                f.applied.len(),
+                f.changed_lines()
+            );
+        }
         if f.links > 1 && f.content != f.original {
             let _ = writeln!(
                 out,

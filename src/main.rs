@@ -1,7 +1,7 @@
 #[cfg(feature = "mcp")]
 mod mcp;
 
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -20,7 +20,18 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), u8> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|arg| {
+            arg.into_string().map_err(|arg| {
+                eprintln!(
+                    "rpatch: argument is not valid UTF-8: {}",
+                    arg.to_string_lossy()
+                );
+                2
+            })
+        })
+        .collect::<Result<_, _>>()?;
     if args.first().is_some_and(|arg| arg == "mcp") {
         return run_mcp(&args[1..]);
     }
@@ -34,16 +45,16 @@ fn run() -> Result<(), u8> {
     }
     let mut text = String::new();
     stdin.read_to_string(&mut text).map_err(|err| {
-        eprintln!("rpatch: cannot read stdin: {err}");
+        eprintln!("rpatch: cannot read stdin: {err}\nrpatch: nothing written");
         2
     })?;
     // A deleted cwd must not hide input errors; relative paths then fail on their own.
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     match rpatch::apply(&text, opts, &cwd) {
-        Ok(out) => {
-            print!("{out}");
-            Ok(())
-        }
+        Ok(out) => print_out(&out).map_err(|err| {
+            eprintln!("rpatch: the edits were written, but printing the result failed: {err}");
+            3
+        }),
         Err(err) => {
             eprint!("{}", err.message);
             Err(err.code)
@@ -51,21 +62,48 @@ fn run() -> Result<(), u8> {
     }
 }
 
+/// Prints to stdout. A reader that stopped early (`| head`) is not a failure.
+fn print_out(text: &str) -> io::Result<()> {
+    let mut stdout = io::stdout().lock();
+    match stdout
+        .write_all(text.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        Err(err) if err.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        result => result,
+    }
+}
+
 fn parse_args(args: &[String]) -> Result<Option<PatchOptions>, u8> {
+    // `--` ends the options, so a file name may start with `-`.
+    let options = match args.iter().position(|arg| arg == "--") {
+        Some(k) => &args[..k],
+        None => args,
+    };
+    // --help and --version win wherever they are, as an unknown argument next to them
+    // is no reason to withhold the help.
+    let print = |text: &str| {
+        print_out(text).map_err(|err| {
+            eprintln!("rpatch: {err}");
+            3
+        })
+    };
+    if options.iter().any(|arg| arg == "-h" || arg == "--help") {
+        print(USAGE)?;
+        return Ok(None);
+    }
+    if options.iter().any(|arg| arg == "-V" || arg == "--version") {
+        print(&format!("rpatch {}\n", env!("CARGO_PKG_VERSION")))?;
+        return Ok(None);
+    }
     let mut opts = PatchOptions::default();
-    for arg in args {
+    for (i, arg) in args.iter().enumerate() {
+        let option = i < options.len();
         match arg.as_str() {
-            "--diff" => opts.diff = true,
-            "-n" | "--dry-run" => opts.dry_run = true,
-            "-h" | "--help" => {
-                print!("{USAGE}");
-                return Ok(None);
-            }
-            "-V" | "--version" => {
-                println!("rpatch {}", env!("CARGO_PKG_VERSION"));
-                return Ok(None);
-            }
-            _ if arg.starts_with('-') => {
+            "--" if i == options.len() => {}
+            "--diff" if option => opts.diff = true,
+            "-n" | "--dry-run" if option => opts.dry_run = true,
+            _ if option && arg.starts_with('-') => {
                 eprintln!("rpatch: unknown argument: {arg}\n{SHORT_USAGE}");
                 return Err(2);
             }
@@ -87,7 +125,7 @@ fn parse_args(args: &[String]) -> Result<Option<PatchOptions>, u8> {
 #[cfg(not(feature = "mcp"))]
 fn run_mcp(_args: &[String]) -> Result<(), u8> {
     eprintln!(
-        "rpatch: this binary was built without MCP support; rebuild with `cargo install --locked --path . --features mcp`"
+        "rpatch: this binary was built without MCP support; rebuild with `cargo install --locked --path . --features mcp`\n  (for a file named `mcp`, write `./mcp`)"
     );
     Err(2)
 }

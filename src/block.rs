@@ -123,18 +123,30 @@ fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Kind, usize), Str
     }
     let open = &line[..len];
     let rest = &line[len..];
-    // `None`: not this word. `Some(None)`: this word with a malformed count.
+    let expected = || {
+        format!(
+            "line {n}: expected `{open} OLD`, `{open} OLD part`, `{open} FROM`, `{open} BEFORE` or `{open} AFTER` (all but FROM may add ` count=N`), found `{line}`"
+        )
+    };
+    // `None`: not this word. `Some(Err)`: this word followed by something other than a count.
     let with_count = |word: &str| {
         let c = rest.strip_prefix(word)?;
         Some(if c.is_empty() {
-            Some(1)
+            Ok(1)
+        } else if let Some(v) = c.strip_prefix(" count=") {
+            v.trim().parse().map_err(|_| {
+                format!("line {n}: `count=` needs a whole number such as `count=2`, found `{line}`")
+            })
         } else {
-            c.strip_prefix(" count=")
-                .and_then(|c| c.trim().parse().ok())
+            Err(expected())
         })
     };
     let parsed = if rest == " FROM" {
-        Some((Kind::Range, 1))
+        Ok((Kind::Range, 1))
+    } else if rest.starts_with(" FROM ") {
+        Err(format!(
+            "line {n}: FROM takes no count, since it has to match once; found `{line}`"
+        ))
     } else if let Some(c) = with_count(" OLD part") {
         c.map(|c| (Kind::ReplacePart, c))
     } else if let Some(c) = with_count(" OLD") {
@@ -144,13 +156,9 @@ fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Kind, usize), Str
     } else if let Some(c) = with_count(" AFTER") {
         c.map(|c| (Kind::Insert { after: true }, c))
     } else {
-        None
+        Err(expected())
     };
-    Some(parsed.map(|(kind, count)| (len, kind, count)).ok_or_else(|| {
-        format!(
-            "line {n}: expected `{open} OLD`, `{open} OLD part`, `{open} FROM`, `{open} BEFORE` or `{open} AFTER` (all but FROM may add ` count=N`), found `{line}`"
-        )
-    }))
+    Some(parsed.map(|(kind, count)| (len, kind, count)))
 }
 
 struct Block {
@@ -196,9 +204,7 @@ impl Block {
             },
             self.part_start
         );
-        if !self.odd.is_empty() {
-            return msg + &self.length_hints();
-        }
+        msg += &self.length_hints();
         let missing = match self.part {
             Part::Old | Part::To if line == m.close => Some(m.sep.as_str()),
             Part::Old | Part::To if m.is_opener(line) => Some(m.sep.as_str()),
@@ -208,11 +214,13 @@ impl Block {
         if let Some(missing) = missing {
             msg += &format!("\n  hint: missing `{missing}` before line {n}?");
         }
-        let longer = Markers::new(m.open.len() + 2);
-        msg += &format!(
-            "\n  hint: if the text itself has this line, use longer markers (`{} OLD`, `{}`, `{}`) or JSON",
-            longer.open, longer.sep, longer.close
-        );
+        if self.odd.is_empty() {
+            let longer = Markers::new(m.open.len() + 2);
+            msg += &format!(
+                "\n  hint: if the text itself has this line, use longer markers (`{} OLD`, `{}`, `{}`) or JSON",
+                longer.open, longer.sep, longer.close
+            );
+        }
         msg
     }
 }
@@ -221,6 +229,8 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
     let mut edits = Vec::new();
     let mut file: Option<String> = default_file.map(String::from);
     let mut block: Option<Block> = None;
+    // Whether a `=== <file>` line came yet: until then, blocks go to `default_file`.
+    let mut file_line = false;
 
     for (i, raw) in text.lines().enumerate() {
         // Marker lines are recognized without trailing whitespace, which is invisible
@@ -228,12 +238,24 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
         let line = raw.trim_end();
         let n = i + 1;
         let Some(b) = block.as_mut() else {
-            if let Some(path) = line.strip_prefix("=== ") {
-                let path = path.trim();
-                if path.is_empty() {
-                    return Err(format!("line {n}: missing file name after `===`"));
+            // `=== ` with no name lost its space to trim_end.
+            if line == "===" {
+                return Err(format!("line {n}: missing file name after `===`"));
+            }
+            let path = line
+                .strip_prefix("=== ")
+                .map(str::trim)
+                .or_else(|| loose_file_line(text, i, line));
+            if let Some(path) = path {
+                if let Some(arg) =
+                    default_file.filter(|&arg| !file_line && edits.is_empty() && arg != path)
+                {
+                    return Err(format!(
+                        "line {n}: the file argument `{arg}` is not used, since the first block comes after `=== {path}`\n  hint: drop the file argument, or put its blocks before the first `=== ` line"
+                    ));
                 }
                 file = Some(path.to_string());
+                file_line = true;
             } else if let Some(opener) = parse_opener(n, line) {
                 let (len, kind, count) = opener?;
                 if file.is_none() {
@@ -269,16 +291,12 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                     .any(|p| line.starts_with(p))
                 {
                     msg += "\n  hint: this is not a diff or patch format; write the old and the new text as they are";
-                } else if text
-                    .lines()
-                    .nth(i + 1)
-                    .is_some_and(|next| parse_opener(n + 1, next.trim_end()).is_some())
-                {
-                    // Seen from Codex: the file line written without its `=== `.
-                    msg += &format!(
-                        "\n  hint: a file line starts with `=== `; write `=== {}`",
-                        line.trim()
-                    );
+                } else if text.lines().skip(i + 1).any(|l| {
+                    let l = l.trim_end();
+                    l.starts_with("=== ") || parse_opener(0, l).is_some()
+                }) {
+                    // A comment or a sentence written around the blocks.
+                    msg += "\n  hint: outside blocks, only `=== <file>` lines and blank lines are allowed; remove this line";
                 } else if file.is_none() {
                     // Seen with `rpatch <<'A' && cat > f <<'B'` and the bodies written in the
                     // other order: rpatch then reads the file's content.
@@ -395,6 +413,21 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
         return Err(msg);
     }
     Ok(edits)
+}
+
+/// A file line written without its `=== `, as a bare path or a diff header (`--- path`),
+/// right before a block opener. Its meaning is plain, and refusing it made agents give up
+/// on rpatch (2026-10-04 to 10-06: 7 times, none came back), so it is read as `=== path`.
+fn loose_file_line<'a>(text: &str, i: usize, line: &'a str) -> Option<&'a str> {
+    let path = line.strip_prefix("--- ").unwrap_or(line).trim();
+    if path.is_empty()
+        || path.contains(char::is_whitespace)
+        || path.starts_with(['<', '=', '>', '#'])
+    {
+        return None;
+    }
+    let next = text.lines().nth(i + 1)?;
+    parse_opener(0, next.trim_end()).map(|_| path)
 }
 
 /// The length of a line that looks like a marker of any length (`<<<<< OLD`, `=====`,

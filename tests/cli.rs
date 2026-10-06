@@ -1227,18 +1227,29 @@ fn file_argument_takes_one_file_and_only_the_block_format() {
     assert_eq!(read(&dir, "a.txt"), "a\n");
 }
 
+/// `=== ` を付け忘れたパスだけの行や、diff 風の `--- path` も、すぐ次がブロックの開始行ならファイル行として読む。
+/// 以前はヒントを出して止めていたが、2026-10-04〜10-06 の 7 回はどれも rpatch に戻らなかった。
 #[test]
-fn file_line_without_its_prefix_gets_a_hint() {
-    // Seen from Codex: `config.js` instead of `=== config.js`.
-    let dir = setup(&[("a.txt", "a\n")]);
+fn file_line_without_its_prefix_is_read_as_one() {
+    // Seen from Codex and Claude Code: `config.js` or `--- config.js` instead of `=== config.js`.
+    let dir = setup(&[("a.txt", "a\n"), ("b.txt", "b\n")]);
     rpatch_raw(
         dir.path(),
         &[],
-        "a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+        "a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n--- b.txt\n<<<<<<< OLD\nb\n=======\nB\n>>>>>>> NEW\n",
     )
-    .code(2)
-    .stderr(predicate::str::contains("write `=== a.txt`"))
-    .stderr(predicate::str::contains("several heredocs").not());
+    .success()
+    .stdout(predicate::str::contains("M a.txt"))
+    .stdout(predicate::str::contains("M b.txt"));
+    assert_eq!(read(&dir, "a.txt"), "A\n");
+    assert_eq!(read(&dir, "b.txt"), "B\n");
+    // 次の行が開始行でなければ、これまでどおり誤り。
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "a.txt\nA\n<<<<<<< OLD\nA\n=======\na\n>>>>>>> NEW\n",
+    )
+    .code(2);
 }
 
 // --- v0.5.0 の確認メモ -------------------------------------
@@ -1715,4 +1726,420 @@ fn guessed_diff_format_gets_the_real_format() {
         "    <<<<<<< OLD\n    exact lines to replace\n    =======\n",
     ));
     assert_eq!(read(&dir, "a.html"), "let x = 1;\n");
+}
+
+// --- 2026-10-06 の見直し: 空行で終わる FROM/TO/アンカー、改行の混在、表面の細部 ----
+
+/// TO が空行 1 行なら、次の空行の手前まで。以前は「TO の行なし」と同じになり、後ろの行を黙って消していた。
+#[test]
+fn blank_to_stops_at_the_next_blank_line() {
+    let dir = setup(&[("a.md", "head\nstart\nbody1\nbody2\n\nkeep1\nkeep2\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.md"],
+        "<<<<<<< FROM\nstart\n<<<<<<< TO\n\n=======\nNEW\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("replaced lines 2-4 (3 lines)"));
+    assert_eq!(read(&dir, "a.md"), "head\nNEW\n\nkeep1\nkeep2\n");
+}
+
+/// 空行だけの FROM は空行に一致する（以前は panic で終了コード 101）。
+#[test]
+fn blank_from_matches_a_blank_line() {
+    let dir = setup(&[("a.txt", "a\n\nb\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< FROM\n\n<<<<<<< TO\nb\n=======\nX\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "a\nX\nb\n");
+}
+
+/// FROM の最後の空行は、本当にある空行にだけ一致する。直後の行を飲み込まない。
+#[test]
+fn from_ending_in_a_blank_line_needs_that_blank_line() {
+    let dir = setup(&[("a.txt", "start\nend\nx\nend\nz\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< FROM\nstart\n\n<<<<<<< TO\nend\n=======\nX\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "found without the blank line at its end, at line 1",
+    ));
+    assert_eq!(read(&dir, "a.txt"), "start\nend\nx\nend\nz\n");
+
+    let dir = setup(&[("a.txt", "start\n\nbody\nend\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< FROM\nstart\n\n<<<<<<< TO\nend\n=======\nX\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "X\nend\n");
+}
+
+/// AFTER のアンカーの最後の空行も同じ。ないなら挿入せず、あるならその空行の後ろに入れる。
+#[test]
+fn anchor_ending_in_a_blank_line_needs_that_blank_line() {
+    let dir = setup(&[("a.txt", "foo\nbar\nbaz\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< AFTER\nfoo\n\n=======\nINS\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "a blank last line in AFTER matches only a blank line",
+    ));
+    assert_eq!(read(&dir, "a.txt"), "foo\nbar\nbaz\n");
+
+    let dir = setup(&[("a.txt", "foo\n\nbar\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< AFTER\nfoo\n\n=======\nINS\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "foo\n\nINS\nbar\n");
+}
+
+/// NEW の末尾と TO の重なりは行で比べる。TO `}` と NEW の最後の `    }` は別の行。
+#[test]
+fn range_new_ending_in_an_indented_to_line_is_fine() {
+    let dir = setup(&[(
+        "a.rs",
+        "fn f() {\n    if x {\n        y();\n    }\n}\nrest\n",
+    )]);
+    rpatch_raw(
+        dir.path(),
+        &["a.rs"],
+        "<<<<<<< FROM\nfn f() {\n<<<<<<< TO\n}\n=======\nfn f() {\n    if z {\n        w();\n    }\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(
+        read(&dir, "a.rs"),
+        "fn f() {\n    if z {\n        w();\n    }\n}\nrest\n"
+    );
+}
+
+/// LF と CRLF が混ざったファイルは、区切り形式では専用のエラーにする。
+#[test]
+fn mixed_line_endings_are_refused_with_their_own_error() {
+    let original = "a\nb\r\nc\n";
+    let dir = setup(&[("a.txt", original)]);
+    for block in [
+        "<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+        "<<<<<<< AFTER\na\n=======\nINS\n>>>>>>> NEW\n",
+    ] {
+        rpatch_raw(dir.path(), &["a.txt"], block)
+            .code(1)
+            .stderr(predicate::str::contains(
+                "the file mixes LF and CRLF line endings",
+            ))
+            .stderr(predicate::str::contains(
+                "line 1 ends with LF, line 2 with CRLF",
+            ));
+    }
+    assert_eq!(read(&dir, "a.txt"), original);
+    // JSON は書いたとおりに照合する。
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.txt", "old": "a\n", "new": "A\n"}]}),
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "A\nb\r\nc\n");
+}
+
+/// count より一致が少ないとき、「1 つに絞れ」とは言わない。
+#[test]
+fn count_hint_when_fewer_matches_than_count() {
+    let dir = setup(&[("a.txt", "x\nx\ny\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< OLD count=3\nx\n=======\nz\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "open the block with `<<<<<<< OLD count=2` if that is intended",
+    ))
+    .stderr(predicate::str::contains("to pick one").not());
+}
+
+/// stdin の先頭の BOM（Windows の PowerShell）は外して読む。
+#[test]
+fn bom_on_stdin_is_ignored() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "\u{feff}=== a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.txt"), "A\n");
+}
+
+/// ブロックの外のコメントや説明文には、ファイル行や heredoc の見当違いのヒントを出さない。
+#[test]
+fn text_outside_blocks_gets_its_own_hint() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    for input in [
+        "# replace a\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+        "Here you go:\n=== a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+    ] {
+        rpatch_raw(dir.path(), &["a.txt"], input)
+            .code(2)
+            .stderr(predicate::str::contains(
+                "outside blocks, only `=== <file>` lines and blank lines are allowed",
+            ))
+            .stderr(predicate::str::contains("write `===").not())
+            .stderr(predicate::str::contains("heredocs").not());
+    }
+}
+
+#[test]
+fn malformed_counts_and_empty_file_lines_are_named() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD count=x\na\n=======\nA\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("`count=` needs a whole number"));
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< FROM count=2\na\n<<<<<<< TO\n=======\nA\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("FROM takes no count"));
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== \n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("missing file name after `===`"));
+}
+
+/// ブロック形式のエラーは、JSON のキー名ではなくブロックの名前で言う。
+#[test]
+fn block_errors_name_block_parts() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< OLD\na\n=======\na\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("OLD and NEW are identical"));
+}
+
+/// 引数のファイルが使われないなら、黙って無視せず入力の誤りにする。
+#[test]
+fn unused_file_argument_is_an_error() {
+    let dir = setup(&[("a.txt", "a\n"), ("b.txt", "b\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "=== b.txt\n<<<<<<< OLD\nb\n=======\nB\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "the file argument `a.txt` is not used",
+    ));
+    assert_eq!(read(&dir, "b.txt"), "b\n");
+    // 同じファイルを両方に書くのは構わない。
+    rpatch_raw(
+        dir.path(),
+        &["b.txt"],
+        "=== b.txt\n<<<<<<< OLD\nb\n=======\nB\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "b.txt"), "B\n");
+}
+
+/// dry run でも読み取り専用を確かめる。本番で失敗するものを成功と言わない。
+#[cfg(unix)]
+#[test]
+fn dry_run_fails_on_a_read_only_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = setup(&[("a.txt", "a\n")]);
+    fs::set_permissions(dir.path().join("a.txt"), fs::Permissions::from_mode(0o444)).unwrap();
+    rpatch_raw(
+        dir.path(),
+        &["-n", "a.txt"],
+        "<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+    )
+    .code(3)
+    .stderr(predicate::str::contains("file is read-only"));
+}
+
+/// 編集が打ち消し合ったファイルは `M` と言わず、書かない。
+#[test]
+fn edits_that_cancel_out_are_reported_as_unchanged() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["a.txt"],
+        "<<<<<<< OLD\na\n=======\nZ\n>>>>>>> NEW\n<<<<<<< OLD\nZ\n=======\na\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout("= a.txt  edits=2  unchanged\n");
+}
+
+/// 書き込んだあとで読み手が先に終わっても（`| head`）、失敗にしない。以前は panic で 101。
+#[test]
+fn closed_stdout_after_writing_is_not_a_failure() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let dir = setup(&[("a.txt", "a\n")]);
+    let mut child = Command::new(assert_cmd::cargo::cargo_bin!("rpatch"))
+        .current_dir(dir.path())
+        .args(["--diff", "a.txt"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n")
+        .unwrap();
+    assert_eq!(child.wait().unwrap().code(), Some(0));
+    assert_eq!(read(&dir, "a.txt"), "A\n");
+}
+
+#[test]
+fn double_dash_allows_a_file_starting_with_a_dash() {
+    let dir = setup(&[("-a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &["--", "-a.txt"],
+        "<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "-a.txt"), "A\n");
+}
+
+/// `rpatch --help | head -40` で、書き方から終了コードまでが読める。
+#[test]
+fn help_and_version() {
+    let dir = setup(&[]);
+    let out = rpatch_raw(dir.path(), &["--bogus", "--help"], "")
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let head: Vec<&str> = std::str::from_utf8(&out)
+        .unwrap()
+        .lines()
+        .take(40)
+        .collect();
+    assert!(head.iter().any(|l| l.starts_with("Exit status:")));
+    assert!(head.iter().any(|l| l.contains("3 I/O error.")));
+    rpatch_raw(dir.path(), &["-V"], "")
+        .success()
+        .stdout(predicate::str::starts_with("rpatch "));
+}
+
+#[test]
+fn invalid_utf8_stdin_says_nothing_written() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    assert_cmd::cargo_bin_cmd!("rpatch")
+        .current_dir(dir.path())
+        .arg("a.txt")
+        .write_stdin(vec![0xff, b'\n'])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("rpatch: nothing written"));
+}
+
+#[cfg(unix)]
+#[test]
+fn invalid_utf8_argument_is_an_input_error() {
+    use std::os::unix::ffi::OsStrExt;
+    let dir = setup(&[]);
+    assert_cmd::cargo_bin_cmd!("rpatch")
+        .current_dir(dir.path())
+        .arg(std::ffi::OsStr::from_bytes(b"\xff.txt"))
+        .write_stdin("")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not valid UTF-8"));
+}
+
+#[test]
+fn unreadable_files_are_io_errors() {
+    let dir = setup(&[("sub/x", "")]);
+    fs::write(dir.path().join("bin.txt"), [0xff, 0xfe, b'\n']).unwrap();
+    for file in ["bin.txt", "sub"] {
+        rpatch_raw(
+            dir.path(),
+            &[file],
+            "<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n",
+        )
+        .code(3)
+        .stderr(predicate::str::contains("cannot read"));
+    }
+}
+
+/// 2 ファイル目の書き込みに失敗したら、1 ファイル目を元に戻す。
+#[cfg(unix)]
+#[test]
+fn failed_write_restores_files_already_written() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = setup(&[("a.txt", "a\n"), ("locked/b.txt", "b\n")]);
+    let locked = dir.path().join("locked");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+    let assert = rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n=== locked/b.txt\n<<<<<<< OLD\nb\n=======\nB\n>>>>>>> NEW\n",
+    );
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    assert
+        .code(3)
+        .stderr(predicate::str::contains("locked/b.txt: write failed"))
+        .stderr(predicate::str::contains("nothing written"));
+    assert_eq!(read(&dir, "a.txt"), "a\n");
+    assert_eq!(read(&dir, "locked/b.txt"), "b\n");
+}
+
+/// 長い行の先頭だけを OLD に書いたとき、`OLD part` にしたら行がどうなるかを見せる。
+/// NEW に行全体を書いていると行の残りが二重になるので、名前を挙げるだけでなく結果で選ばせる。
+#[test]
+fn partial_old_shows_the_line_that_old_part_would_give() {
+    let original = "#\nlong line with a lot of text after it\nend\n";
+    let dir = setup(&[("a.md", original)]);
+    rpatch_raw(
+        dir.path(),
+        &["a.md"],
+        "<<<<<<< OLD\nlong line\n=======\nshort line\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "with `<<<<<<< OLD part` and the same OLD and NEW, the other text on the line is kept:\n       2 | short line with a lot of text after it\n",
+    ))
+    .stderr(predicate::str::contains(
+        "change only the opener to `<<<<<<< OLD part`",
+    ));
+    rpatch_raw(
+        dir.path(),
+        &["a.md"],
+        "<<<<<<< OLD\nlong line\n=======\nlong line, all new\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "       2 | long line, all new with a lot of text after it\n",
+    ));
+    assert_eq!(read(&dir, "a.md"), original);
 }

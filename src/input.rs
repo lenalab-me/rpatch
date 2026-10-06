@@ -57,6 +57,8 @@ struct JsonEdit {
 /// Parses JSON (input starting with `{`) or the block format. `file` is the file for
 /// blocks before any `=== <file>` line.
 pub fn parse(text: &str, file: Option<&str>) -> Result<Vec<Edit>, String> {
+    // Windows PowerShell can put a BOM in front of what it pipes in.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let edits = if text.trim_start().starts_with('{') {
         if let Some(file) = file {
             return Err(format!(
@@ -157,18 +159,28 @@ fn validate(edits: &[Edit]) -> Result<(), String> {
     }
     for (i, e) in edits.iter().enumerate() {
         let label = e.label(i);
+        // Name the parts as they were written: OLD/NEW in blocks, "old"/"new" in JSON.
+        let (old, new) = if e.lines {
+            ("OLD", "NEW")
+        } else {
+            ("\"old\"", "\"new\"")
+        };
         if e.file.is_empty() {
-            return Err(format!("{label}: \"file\" is empty"));
+            return Err(if e.lines {
+                format!("{label}: the file name is empty")
+            } else {
+                format!("{label}: \"file\" is empty")
+            });
         }
         match &e.target {
-            Target::Text(old) if old.is_empty() => {
+            Target::Text(text) if text.is_empty() => {
                 return Err(format!(
-                    "{label}: \"old\" is empty (creating files is not supported)"
+                    "{label}: {old} is empty (creating files is not supported)"
                 ));
             }
-            Target::Text(old) if *old == e.new => {
+            Target::Text(text) if *text == e.new => {
                 return Err(format!(
-                    "{label}: \"old\" and \"new\" are identical, so the edit would change nothing"
+                    "{label}: {old} and {new} are identical, so the edit would change nothing"
                 ));
             }
             Target::Insert { anchor, after } if anchor.trim().is_empty() => {
@@ -181,7 +193,8 @@ fn validate(edits: &[Edit]) -> Result<(), String> {
                 ));
             }
             Target::Range { from, .. } if from.is_empty() => {
-                return Err(format!("{label}: \"from\" must not be empty"));
+                let from = if e.lines { "FROM" } else { "\"from\"" };
+                return Err(format!("{label}: {from} must not be empty"));
             }
             _ => {}
         }

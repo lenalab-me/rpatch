@@ -21,6 +21,9 @@ pub struct Mismatch {
 /// Returns the spans to replace, ascending and non-overlapping.
 pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
     let crlf = edit.lines && content.contains("\r\n");
+    if crlf && let Some(m) = mixed_line_endings(content) {
+        return Err(m);
+    }
     let nl = if crlf { "\r\n" } else { "\n" };
     let new = adapt(&edit.new, crlf);
     match &edit.target {
@@ -49,6 +52,19 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                 overlap,
             };
             let mut err = mismatch("old", content, &old, &found, edit.count, edit.lines);
+            // Show the result rather than only name OLD part: when NEW holds the whole
+            // line, OLD part would keep the rest of the line twice.
+            if whole_lines
+                && positions.is_empty()
+                && err
+                    .details
+                    .first()
+                    .is_some_and(|d| d.starts_with("found only as part of a line"))
+                && let Some(preview) = part_preview(content, &old, &new, nl, edit.count)
+            {
+                err.details.pop();
+                err.details.extend(preview);
+            }
             if edit.part {
                 for d in &mut err.details {
                     *d = d.replace("<<<<<<< OLD count=", "<<<<<<< OLD part count=");
@@ -59,9 +75,10 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
         Target::Insert { anchor, after } => {
             let field = if *after { "after" } else { "before" };
             let anchor = adapt(anchor, crlf);
-            let text = anchor.strip_suffix(nl).unwrap_or(&anchor);
+            let text = line_text(&anchor, nl);
             // Part of a line is enough: inserting at line boundaries rewrites no line.
-            let positions = occurrences(content, text, false);
+            // A blank first line is a whole blank line, not the end of any line.
+            let positions = occurrences(content, text, text.starts_with(nl));
             let found = Found::new(&positions, text.len());
             if positions.len() != edit.count || found.overlap {
                 return Err(mismatch(field, content, text, &found, edit.count, true));
@@ -70,7 +87,7 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                 .iter()
                 .map(|&p| {
                     if *after {
-                        line_end(content, p + text.len())
+                        match_line_end(content, p + text.len())
                     } else {
                         line_start(content, p)
                     }
@@ -112,10 +129,7 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
             // In the block format, FROM and TO match at line starts, and their last line
             // may be only the start of a line: they pick lines, they do not copy them.
             let (from_text, to_text) = if edit.lines {
-                (
-                    from.strip_suffix(nl).unwrap_or(&from),
-                    to.strip_suffix(nl).unwrap_or(&to),
-                )
+                (line_text(&from, nl), line_text(&to, nl))
             } else {
                 (from.as_ref(), to.as_ref())
             };
@@ -126,12 +140,13 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
             }
             let start = starts[0];
             let after = if edit.lines {
-                line_end(content, start + from_text.len())
+                match_line_end(content, start + from_text.len())
             } else {
                 start + from_text.len()
             };
-            // An empty TO is the end of the file: deleting or rewriting a file's tail
+            // No TO lines is the end of the file: deleting or rewriting a file's tail
             // otherwise needs every line in OLD, and agents fell back to `head -n`.
+            // (A blank TO line is not empty: it matches the next blank line.)
             if to_text.is_empty() {
                 let new = if !content.ends_with('\n') && !content.is_empty() {
                     // Keep the file without a final break.
@@ -152,11 +167,16 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
             };
             let end = after + q;
             let kept = if edit.lines {
-                &content[end..line_end(content, end + to_text.len())]
+                &content[end..match_line_end(content, end + to_text.len())]
             } else {
                 to_text
             };
-            if new.ends_with(kept) {
+            // Whole lines in the block format: NEW ending in `    }` does not repeat a TO of `}`.
+            let repeated = match new.strip_suffix(kept) {
+                Some(rest) => !edit.lines || rest.is_empty() || rest.ends_with('\n'),
+                None => false,
+            };
+            if repeated {
                 // An easy slip: TO is kept, so repeating it at the end of NEW doubles it.
                 let idx = LineIndex::new(content);
                 let line = idx.line_of(end);
@@ -203,6 +223,57 @@ fn line_end(content: &str, p: usize) -> usize {
     content[p..].find('\n').map_or(content.len(), |i| p + i + 1)
 }
 
+/// The end of the line that a match ending at `end` is on: `end` itself if the match
+/// ended with its line break.
+fn match_line_end(content: &str, end: usize) -> usize {
+    if end > 0 && content.as_bytes()[end - 1] == b'\n' {
+        end
+    } else {
+        line_end(content, end)
+    }
+}
+
+/// The text that FROM, TO or an anchor has to match. Its last line may be only the start
+/// of a line, so the line break after it is dropped; but a blank last line would then
+/// match the end of any line, so it keeps its break and matches a blank line.
+fn line_text<'a>(s: &'a str, nl: &str) -> &'a str {
+    match s.strip_suffix(nl) {
+        Some(t) if !t.is_empty() && !t.ends_with('\n') => t,
+        _ => s,
+    }
+}
+
+/// Block texts follow the file's line endings, which a file with both LF and CRLF does
+/// not have: its LF lines could never match, and inserted lines would get CRLF.
+fn mixed_line_endings(content: &str) -> Option<Mismatch> {
+    let bytes = content.as_bytes();
+    let (mut lf, mut crlf) = (None, None);
+    let mut line = 0;
+    for (i, &b) in bytes.iter().enumerate() {
+        if b != b'\n' {
+            continue;
+        }
+        line += 1;
+        if i > 0 && bytes[i - 1] == b'\r' {
+            crlf.get_or_insert(line);
+        } else {
+            lf.get_or_insert(line);
+        }
+        if lf.is_some() && crlf.is_some() {
+            break;
+        }
+    }
+    let (lf, crlf) = (lf?, crlf?);
+    Some(Mismatch {
+        headline: "the file mixes LF and CRLF line endings, which the block format cannot follow"
+            .into(),
+        details: vec![
+            format!("line {lf} ends with LF, line {crlf} with CRLF"),
+            "hint: convert the file to one line ending first, or use the JSON input, whose texts are matched as written (\\r\\n for CRLF)".into(),
+        ],
+    })
+}
+
 fn at_line_start(content: &str, p: usize) -> bool {
     p == 0 || content.as_bytes()[p - 1] == b'\n'
 }
@@ -220,6 +291,9 @@ fn adapt(s: &str, crlf: bool) -> Cow<'_, str> {
 /// `line_start`, only matches at the start of a line count.
 fn occurrences(content: &str, needle: &str, line_start: bool) -> Vec<usize> {
     let mut out = Vec::new();
+    if needle.is_empty() {
+        return out;
+    }
     let mut from = 0;
     while let Some(i) = content[from..].find(needle) {
         let p = from + i;
@@ -315,7 +389,9 @@ fn mismatch(
 
     let headline = format!("\"{field}\" not found");
     let details = match block
-        .then(|| partial_line(content, needle, 0, field))
+        .then(|| {
+            blank_end(content, needle, 0, field).or_else(|| partial_line(content, needle, 0, field))
+        })
         .flatten()
     {
         Some(details) => details,
@@ -366,6 +442,35 @@ fn overlap_places(content: &str, positions: &[usize], len: usize, within_line: b
         format!("lines {}", and_list(&groups[0].1))
     };
     format!("{text}{more}")
+}
+
+/// A blank last line has to match a blank line. If the text is in `content[start..]`
+/// without it, say so: the loose "different whitespace" hint would only confuse.
+fn blank_end(content: &str, needle: &str, start: usize, field: &str) -> Option<Vec<String>> {
+    let text = needle.trim_end_matches(['\n', '\r']);
+    let breaks = needle[text.len()..].matches('\n').count();
+    if text.is_empty() || breaks < 2 {
+        return None;
+    }
+    let idx = LineIndex::new(content);
+    let mut at: Vec<usize> = occurrences(&content[start..], text, false)
+        .iter()
+        .map(|&p| idx.line_of(start + p))
+        .collect();
+    if at.is_empty() {
+        return None;
+    }
+    at.dedup();
+    let name = field.to_uppercase();
+    Some(vec![
+        format!(
+            "found without the blank line at its end, at {}",
+            line_list(&at)
+        ),
+        format!(
+            "hint: a blank last line in {name} matches only a blank line; remove it if the file has none there"
+        ),
+    ])
 }
 
 /// Block texts match at line starts. If the text is in `content[start..]` only as part of
@@ -435,6 +540,52 @@ fn partial_line(content: &str, needle: &str, start: usize, field: &str) -> Optio
     Some(out)
 }
 
+/// OLD was found only as part of a line, usually a long line written up to where the
+/// change ends. Shows what the line would become with `OLD part`, which keeps the rest.
+fn part_preview(
+    content: &str,
+    old: &str,
+    new: &str,
+    nl: &str,
+    count: usize,
+) -> Option<Vec<String>> {
+    let text = old.strip_suffix(nl).unwrap_or(old);
+    let positions = occurrences(content, text, false);
+    if positions.len() != count || Found::new(&positions, text.len()).overlap {
+        return None;
+    }
+    let (p, end) = (positions[0], positions[0] + text.len());
+    let head = &content[line_start(content, p)..p];
+    let tail = content[end..line_end(content, end)].trim_end_matches(['\n', '\r']);
+    let result = format!("{head}{}{tail}", new.strip_suffix(nl).unwrap_or(new));
+    let lines: Vec<&str> = result
+        .split('\n')
+        .map(|l| l.trim_end_matches('\r'))
+        .collect();
+    let idx = LineIndex::new(content);
+    let mut shown = Vec::new();
+    if !head.is_empty() || tail.is_empty() {
+        shown.push(gutter(idx.line_of(p), lines[0]));
+    }
+    if !tail.is_empty() && (lines.len() > 1 || shown.is_empty()) {
+        shown.push(gutter(idx.line_of(end), lines[lines.len() - 1]));
+    }
+    let opener = if count == 1 {
+        "<<<<<<< OLD part".to_string()
+    } else {
+        format!("<<<<<<< OLD part count={count}")
+    };
+    let mut out = vec![format!(
+        "with `{opener}` and the same OLD and NEW, the other text on the line is kept{}:",
+        if count > 1 { " (first match)" } else { "" }
+    )];
+    out.extend(shown);
+    out.push(format!(
+        "hint: if that is the line you want, change only the opener to `{opener}`; if not, copy the whole line into OLD and write the whole new line in NEW; to only add lines next to it, use BEFORE/AFTER"
+    ));
+    Some(out)
+}
+
 fn to_not_found(
     content: &str,
     to: &str,
@@ -450,7 +601,9 @@ fn to_not_found(
     );
     let before = occurrences(&content[..from_start], to_text, block);
     let details = match block
-        .then(|| partial_line(content, to, after, "to"))
+        .then(|| {
+            blank_end(content, to, after, "to").or_else(|| partial_line(content, to, after, "to"))
+        })
         .flatten()
     {
         Some(details) => details,

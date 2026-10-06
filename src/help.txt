@@ -41,10 +41,15 @@ Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input
 Details
 -------
 Blocks:
-  Blocks follow the file's line endings (LF or CRLF). Trailing whitespace on marker
-  lines is ignored. Markers may be longer than 7 characters: a block opened with
+  Blocks follow the file's line endings (LF or CRLF); a file that mixes both is
+  refused (convert it, or use JSON). Trailing whitespace on marker lines is
+  ignored. Markers may be longer than 7 characters: a block opened with
   `<<<<<<<<< OLD` (9) ends only at `=========` and `>>>>>>>>> NEW` (9), so lines with
   7-character markers inside it are plain text.
+  A blank last line in FROM, TO, BEFORE or AFTER matches a blank line, so a TO of
+  one blank line replaces up to the next blank line.
+  A line with just a path, or `--- path`, right before a block opener is read as
+  `=== path`.
   FROM/TO: to delete an end marker line too, use the line after it as TO.
   BEFORE/AFTER: several AFTER blocks on one anchor stack up in reverse (each goes
   right below the anchor), so put the lines in one NEW instead.
@@ -61,10 +66,14 @@ Rules:
     Overlapping matches (such as repeated identical lines) count, and are an error.
   - Edits to the same file apply in order; each one sees the result of the previous.
   - Each file is replaced via temp file + rename, which breaks hard links to it
-    (rpatch warns). A UTF-8 BOM is kept and takes no part in matching.
+    (rpatch warns) and keeps only the permission bits (not extended attributes or
+    ACLs). A UTF-8 BOM is kept and takes no part in matching.
 
 Output:
   Lines that OLD and NEW share at the start or end are not counted in at_lines.
   A deletion shows the line that now sits where the deleted lines were, or the last
   line if the end of the file was deleted. A range edit also prints which lines it
-  replaced.
+  replaced. A file whose edits cancel out shows `= <file>  edits=<n>  unchanged`
+  and is not written.
+  Exit status 3 wins over 1 when both happen. `--` ends the options, for a file
+  argument that starts with `-`.
