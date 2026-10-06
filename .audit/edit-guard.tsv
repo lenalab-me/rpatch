@@ -1,0 +1,21 @@
+ts	phase	decision	why	evidence	result
+2026-10-06T15:23:20Z	frame	決めた枠組みで始める: 1 本のフックに規則を表で持ち、既存の追跡ファイルへの上書き・sed -i・引用なしの rpatch heredoc を足す	rpatch の外で確かめずに書く経路が、7 日で cat > 444 回（リポジトリ内）、sed -i 54 回あったため	thread 159c617d	open
+2026-10-06T15:24:07Z	harness	claude plugin init が ~/.claude/skills/scaffold に雛形を作ってしまったので消した。プラグインの形（.claude-plugin/plugin.json、skills は ./）だけ借りる	init は作業ディレクトリではなく skills の下に作る仕様で、次のセッションから自動で読み込まれるため	~/.claude/skills/scaffold（削除済み）、enabledPlugins は空	removed
+2026-10-06T15:24:07Z	harness	過去 14 日の Bash のコマンド 7890 件を cwd と結果つきで /tmp/rp-guard/corpus.jsonl に書き出した（prod-rpatch と pi-agent を除く）	規則を足す前後で、止める件数を同じ材料で比べるため	/tmp/rp-guard/extract.py	7890 commands
+2026-10-06T15:39:03Z	rules	python の規則を新しいフックへ移した	判定を変えずに 1 本にまとめるため	tools/hooks/replay.py: 7890 件で旧フックと一致 347/347	VERIFIED
+2026-10-06T15:39:03Z	rules	rpatch-unquoted の規則をやめた	当て直しで止めた 4 件のうち 3〜4 件が、=== $f のループや $IMG の埋め込みなど、わざと展開する正当な使い方だった	replay の rpatch-unquoted の見本（beat-jam、network-designer）	dropped
+2026-10-06T15:39:03Z	harness	当て直しの「追跡しているか」を、コマンドの時刻にすでに git に入っていたかで見るようにする	今のディスクで見ると、そのとき新しく作っていたファイル（ベンチの cat > lib/task.mjs など）を上書きと数えてしまうため	replay の overwrite-tracked の見本	open
+2026-10-06T15:41:52Z	rules	当て直し（当時の状態で判定）: 14 日 7890 件で python 347、sed -i 25、上書き 10。上書き 10 件のうち 8 件は事前に読んだうえでの書き直し、2 件は読まずに上書き（.gitignore を 1 行で置き換えたもの）	止める件数が少なく、止めたいもの（読まずに上書き）が実際に入っているので、上書きの規則を残す	tools/hooks/replay.py、/tmp/rp-guard/corpus.jsonl	kept
+2026-10-06T15:41:52Z	tests	フックの単体テスト 8 件。追跡の判定や伏せ字をわざと壊すと落ちることも確かめた	テストが判定そのものを見ているかを確かめるため	tools/hooks/test_edit_guard.py	8/8 pass; mutants fail 2 and 1
+2026-10-06T15:43:41Z	live	settings.json を edit_guard.py に切り替え、新しい claude -p（Sonnet 5.5）で sed -i と printf > config.json を頼んだ。両方止まり、案内どおり rpatch で 2 行だけ変えた	フックが実際のセッションで止まり、立ち直れるかを、模擬ではなく本物で確かめるため	~/project/lab/guard-live-1007、/tmp/rp-guard/live.json、git diff --stat 2 files	VERIFIED (config.json の他の 4 項目も残った)
+2026-10-06T15:47:07Z	plugin	plugin/ にマニフェスト・hooks.json・スキルを置いた。validate が通り、ユーザー設定を読まない claude -p --plugin-dir で sed -i が止まり、スキル rpatch:rpatch が一覧に出た	配る形でも、プラグイン単体で同じ動きになることを確かめるため	plugin/、/tmp/rp-guard/live-plugin.json	VERIFIED
+2026-10-06T15:47:58Z	review	interrogate を 3 モデル（Fable 5.1、GPT-6.1-Sol、Grok 4.7）に出した。依頼文は /tmp/rp-guard/interrogate-brief.md	フックはすべてのセッションの Bash に効くので、誤って止める・落ちる・固まるを別のモデルの目で探すため	delegate_task edit-guard-interrogate-A/B/C-1	open
+2026-10-06T16:03:28Z	review	引用を外す正規表現の指数的な戻り直しを直し、入れてあるフックを差し替えた	Reviewer A が、閉じていない引用のあとにバックスラッシュ 27 個で 51 秒（上限 10 秒）を実測。フックはもう有効だった	plugin/hooks/edit_guard.py:144、40 個で 0.04 秒	fixed (hotfix)
+2026-10-06T16:03:28Z	review	3 人の指摘を仕分けた: 直すもの 9 種（cd の範囲、heredoc の区切りと二重引用の中の heredoc、改行と継続、sed がコマンド名を数える、perl の切り分け、if や sudo などの後ろ、&> と >&、引用した ~ とグロブ、一時ディレクトリの前方一致）	どれも実行で再現されていた。3 人とも根は同じで、解析がコマンドの形を持たず、伏せ字と正規表現の継ぎはぎになっている	delegate_task edit-guard-interrogate-A/B/C-1 の結果	act on
+2026-10-06T16:03:28Z	design	解析を作り直す: 1 回の走査の字句解析（heredoc はどこでも、区切りはどの形でも、$( ) と継続も扱う）から、コマンドごとに作業ディレクトリ・名前・引数・リダイレクトを組み立て、規則はそれだけを見る。python の規則は解析より先に今のまま判定する	同じ形の回避策が関係ないところで何度も要る状態で、継ぎはぎを続けると誤判定が増えるため（architect の作り直しの合図）	interrogate の指摘の重なり方	open
+2026-10-06T16:09:06Z	rewrite	解析を作り直した（Lexer → Command → 規則）。レビューの再現例を含むテスト 13 件が通り、追跡・cd・heredoc・ラッパーをそれぞれ壊すとテストが 3・3・2・1 件落ちる	継ぎはぎをやめ、コマンドの形（作業ディレクトリ、引数、リダイレクト）を持つ解析にするため	plugin/hooks/edit_guard.py、tools/hooks/test_edit_guard.py	13/13 pass
+2026-10-06T16:09:06Z	rewrite	作り直し後の当て直し: python 347/347 一致、sed -i 25、上書き 10（前回と同じ 10 件）、今の index で数えた上限は 48 と 70、最長 216 ms	作り直しで止める対象が変わっていないことと、時間の上限に余裕があることを確かめるため	tools/hooks/replay.py	VERIFIED
+2026-10-06T16:09:35Z	install	~/.claude/hooks/edit_guard.py を、写しからリポジトリのファイルへのシンボリックリンクに替えた。新しい claude -p で echo > lib/format.mjs が overwrite-tracked で止まり、ファイルは変わらなかった	写しが 2 つあるとずれるため（Reviewer A の指摘 8）	ls -l ~/.claude/hooks/edit_guard.py、~/project/lab/guard-live-1007	VERIFIED
+2026-10-06T16:11:48Z	harness	当時の状態で判定する当て直し（15:39 の open）と作り直しの方針（16:03 の open）は、15:41 と 16:09 の行のとおり済んだ	追記だけの決まりなので、締めの行で決着を残す	この行より前の 15:41、16:09 の行	closed
+2026-10-06T16:11:48Z	docs	docs/edit-guard.md を書き、README と HANDOFF（入れ方、主な判断、比較の時刻）からたどれるようにした。書き出しのスクリプトを tools/hooks/extract.py として残した	人があとから止めるものと確かめ方を追えるようにし、当て直しを同じ道具でやり直せるようにするため	docs/edit-guard.md、tools/hooks/extract.py	done
+2026-10-06T16:11:48Z	cleanup	/tmp/rp-guard（当て直しの材料、実地確認の出力、レビューの依頼文）を消した。数字は docs/edit-guard.md とこのログに残っている	セッションの中身を含み、認証情報が入りうるため	rm -r /tmp/rp-guard	removed

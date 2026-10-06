@@ -14,12 +14,14 @@
 - コードを変えたら `cargo install --locked --path .` で入れ直す（CLI だけ、0.8MB）。MCP を使い直すときは `--features mcp` で入れてから、`claude mcp add --transport stdio --scope user rpatch -- ~/.cargo/bin/rpatch mcp`、`codex mcp add rpatch -- ~/.cargo/bin/rpatch mcp` で登録する。
 - エージェントへの案内は `~/.claude/CLAUDE.md` の 2 行だけ（Codex の `~/.codex/AGENTS.md` と Cursor の `~/.cursor/rules/global.mdc` も 2026-10-03 から同じ内容。CLAUDE.md を変えたら両方にコピーする。ただし T3 から delegate した Cursor の子にはルールが届かないので、タスクの文に書く）（2026-10-02 から英語）: 「Replace: `sd` for replacing in a pipe or with a regex. To change a file, use `rpatch`, even for one spot …」と「Multi-line or multi-place replacements and insertions: `rpatch` (pass blocks on stdin; the format is in `rpatch --help`). Chain follow-up commands on the opening line … Don't replace with a python heredoc」。
 - エージェントは `rpatch --help | head -40` で読むことが多い。help は、書き方・ブロックの種類・Tips・出力・終了コードを先頭 39 行に収めている。help を変えるときは、この 40 行を崩さない。
+- Bash の PreToolUse のフックは `~/.claude/hooks/edit_guard.py`（リポジトリの `plugin/hooks/edit_guard.py` へのシンボリックリンク）。2026-10-07 に、初代の `no-python-replace.py`（python の置換だけ）から切り替えた。止めるものと確かめ方は `docs/edit-guard.md`。切り替える前の settings.json は `~/.claude/settings.json.bak-20261007-edit-guard`。
 
 ## 主な判断（理由は handoff-history.md と git のログ）
 
 - **一致は完全一致、全部か無しか。** 失敗したら何も書かず、行番号と原因を出す。
 - **OLD は行全体だけに一致する。** 長い行の先頭だけを書いて部分一致させると、行の残りが黙って残るため。行の一部は `<<<<<<< OLD part` と明示して書く（v0.8.0、#2）。きっかけは、指示なしのセッションで、行の一部の書き換えのために python や `sd -F` に戻っていたこと。
 - **書式はゆるく、照合は厳しく。** 意味がひとつにしか取れない書き方の揺れは受け付ける（v0.11.0 から、ブロックの直前のパスだけの行や `--- path` を `=== path` として読む）。止めると、エージェントが heredoc や `cat >` に逃げ、確かめずに書いて壊すほうが危ないため（10/4〜10/6 の 7 回はどれも rpatch に戻らなかった）。照合の側は緩めない。
+- **ほかの書き込みの経路はフックでふさぐ（2026-10-07）。** 確かめずに書く経路（python の置換、`sed -i`、追跡しているファイルへの `cat >`・`echo >`・`printf >`・`tee`）を止め、止めるたびに代わりの手を案内する。止めすぎると別の経路に逃げるので、新しいファイル、追跡していないファイル、一時ディレクトリ、追記、`>|`、分からないものは通す。14 日分 7,890 件に当て直して、python 347・`sed -i` 25・上書き 10 を止め、誤って止めるものは見つからなかった。
 - **MCP はやめた（2026-10-02）。** MCP のツールは、説明文だけを見て書き方を推測されがちだった（Claude Code は `--- old` / `+++ new` 形式、Codex は引数名 `patch`）。CLI なら CLAUDE.md の案内でまず `--help` を読む。Codex での比較でも、自分から使ったのは CLI 6/6、MCP 2/6。
 - **書き込む前の構文チェック（v1、tree-sitter）は見送った（#3）。** 実際に構文を壊した編集は 670 回中 3 回（0.45%）で、どれもエージェント自身の確認ですぐ見つかっていた。`tools/log-analysis/syntax_breaks.py` で測り直せる。
 - **CI は手動起動だけ。** private リポジトリでは macOS のランナーが 10 倍、Windows が 2 倍の分数を消費するため。配布用のバイナリが要るときに `gh workflow run build.yml`。Windows はまだ一度も動かしていない。
@@ -61,6 +63,7 @@
 | 2026-10-06 14:27 | v0.11.0 を入れた。コードの見直しと 1 週間のログから: 空行で終わる FROM/TO/アンカーは空行に一致（空行 1 行の TO が後ろの行を黙って消していた）、TO の重複判定は行単位、改行の混在は専用のエラー、パスだけの行と `--- path` をファイル行として読む、OLD が行の一部としてだけ見つかったら `OLD part` にした結果の行を見せる、打ち消し合った編集は `= <file> … unchanged`。直前 7 日（716 回中 125 回失敗）の内訳: 入力の書式 33（うちファイル行の書き間違い 7）、行の一部（後半欠け）32、NEW と TO の重複 9。以後、ファイル行の書き間違いは 0 に、行の一部の失敗は次の 1 回で直る割合（いま 27/32、中央値 9 秒）と、`sd` や `cat>` に移る件数を見る |
 | 2026-10-06 14:54 | v0.11.1: `OLD part` のプレビューで、切れた行だけでなく置き換えたあとの行を 8 行まで見せる（上の試用で、行を足す編集が元と同じ行に見えた）。以後、行の一部の失敗で、次の 1 回が `OLD part` になる割合を見る |
 | 2026-10-06 15:14 | v0.12.0: 読み込んだあとにファイルが変わっていたら、何も書かずに終了コード 3（書き込みの前と、ファイルごとの rename の直前に、バイト単位で確かめる）。同じ作業ツリーのほかのエージェントやフォーマッタの変更を黙って消さないため。集計では、フックに止められた python の置換を `python_replace_blocked`（session.py とダッシュボードは `py阻止`）として別に数える |
+| 2026-10-06 15:41 | Bash のフックを `edit_guard.py` に切り替えた（初代の python の置換に加えて、追跡しているファイルへの `sed -i`・`perl -i` と、`cat`・`echo`・`printf` の `>`・`tee` での上書きを止める）。16:09 に、interrogate の指摘を受けて解析を作り直した版（シンボリックリンク）にした。以後、ダッシュボードの「フックが止めた書き込み」で、規則ごとの件数と、止まったあと rpatch に移るか（`sd`・`cat>`・Write に逃げないか）を見る。当て直しの見込みは 14 日で `sed -i` 25、上書き 10（`docs/edit-guard.md`） |
 
 ## リポジトリと要望の受け方
 
