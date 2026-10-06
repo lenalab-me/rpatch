@@ -11,10 +11,19 @@ REPLACE = re.compile(r'\.replace\(|\bre\.sub\(')
 WRITE = re.compile(r"""open\([^)]*['"]w['"]|write_text\(|\.write\(""")
 GUARD = re.compile(r'\bassert\b|\braise\b|\.count\(')
 PY_FAIL = re.compile(r'Traceback|AssertionError')
-# コマンドの先頭で呼んでいるものだけ（`cd .../rpatch` や `for n in rpatch ...` は数えない）
-RPATCH = re.compile(r'(^|[;&|(\n])\s*(\S*/)?rpatch(\s|$)')
+# コマンドの位置で呼んでいるものだけ（`cd .../rpatch` や `for n in rpatch ...` は数えない）。
+# 前に VAR=value や time・env・command が付いてもよい。mask() をかけた文字列に当てる
+RPATCH = re.compile(
+    r'(?:^|[;&|(`{\n])[ \t]*(?:(?:then|do|else)[ \t]+)?'
+    r'(?:(?:\w+=\S*|(?:time|env|command|exec|nohup)(?:[ \t]+-\S+)*)[ \t]+)*(?:\S*/)?rpatch(?=\s|$)', re.M)
+# rpatch 自身の引数の終わり（連ねた別のコマンドの引数を拾わない）
+RPATCH_ARGS_END = re.compile(r'<<|&&|\|\||\||;|\n|$')
 # dry run は、失敗するケースをわざと試すのにも使われるので、本番の失敗と分けて数える
-RPATCH_DRY_RUN = re.compile(r'\brpatch\b[^\n]*\s(-n|--dry-run)\b')
+RPATCH_DRY_RUN = re.compile(r'(?<!\S)(?:-n|--dry-run)(?!\S)')
+# 失敗の最後の行。成功した dry run の `(dry run: nothing written)` とは別
+RPATCH_FAILED = re.compile(r'^rpatch: nothing written\s*$', re.M)
+BLOCK_OPENER = re.compile(r'^<{7,}[ \t]+(?:OLD|FROM|BEFORE|AFTER)\b', re.M)
+HEREDOC_START = re.compile(r'<<(-?)[ \t]*(?:\'([^\']*)\'|"([^"]*)"|\\?(\w+))')
 EDIT_MISMATCH = re.compile(r'String to replace not found|Found \d+ matches')
 
 # --- やり直しと確認（rework） ---
@@ -36,6 +45,92 @@ def base(path):
     return (path or '').rstrip('/').rsplit('/', 1)[-1]
 
 
+def mask(cmd):
+    """引用符の中・ヒアドキュメントの本文・コメントを Q に置き換える（長さは変えない）。
+    ほかのコマンドの文章（git commit -m の複数行、ヒアドキュメント）に出てくる rpatch を拾わないため。
+    シェルの構文解析ではなく、よくある書き方に合わせた近似。"""
+    out = list(cmd)
+    n = len(cmd)
+
+    def fill(a, b):
+        for k in range(a, b):
+            if out[k] != '\n':
+                out[k] = 'Q'
+
+    pending = []  # 次の行から本文が始まるヒアドキュメントの (区切り語, <<- か)
+    i = 0
+    while i < n:
+        ch = cmd[i]
+        if ch == '\\':
+            i += 2
+        elif ch in '\'"':
+            j = i + 1
+            while j < n and cmd[j] != ch:
+                j += 2 if ch == '"' and cmd[j] == '\\' else 1
+            if j < n:  # 閉じていない引用符は、ただの文字として読み飛ばす
+                fill(i + 1, j)
+                i = j
+            i += 1
+        elif ch == '#' and (i == 0 or cmd[i - 1] in ' \t\n;&|('):
+            j = cmd.find('\n', i)
+            j = n if j < 0 else j
+            fill(i, j)
+            i = j
+        elif cmd.startswith('<<', i) and not cmd.startswith('<<<', i) and HEREDOC_START.match(cmd, i):
+            m = HEREDOC_START.match(cmd, i)
+            pending.append((m.group(2) or m.group(3) or m.group(4), bool(m.group(1))))
+            i = m.end()
+        elif ch == '\n' and pending:
+            i += 1
+            for delim, dash in pending:
+                start = i
+                while i < n:
+                    eol = cmd.find('\n', i)
+                    eol = n if eol < 0 else eol
+                    line = cmd[i:eol]
+                    i = min(eol + 1, n)
+                    if (line.lstrip('\t') if dash else line).rstrip() == delim:
+                        break
+                fill(start, i)
+            pending.clear()
+        else:
+            i += 1
+    return ''.join(out)
+
+
+def positional_file(args, masked_args):
+    """rpatch の引数のうち、オプションでもリダイレクトでもない最初のもの（ファイルの位置引数）。"""
+    skip = False
+    for t in re.finditer(r'\S+', masked_args):
+        w = t.group()
+        if skip:
+            skip = False
+        elif re.match(r'\d*[<>]', w):
+            skip = bool(re.fullmatch(r'\d*(>>?|<)', w))  # `2> file` のように演算子だけなら次の語も飛ばす
+        elif not w.startswith('-'):
+            return args[t.start():t.end()].strip('\'"')
+    return None
+
+
+def rpatch_call(cmd):
+    """コマンドの位置で rpatch を呼んでいれば (dry run か, 編集する呼び出しか, 触ったファイルのリスト)。
+    呼んでいなければ None。最初の呼び出しだけを見る。dry run のフラグは rpatch 自身の引数
+    （`<<`・`&&`・`||`・`|`・`;`・行末まで）からだけ探す。連ねた `rg -n` などは見ない。
+    ブロックの開始行があれば編集とみなし、`=== ` 行が無ければファイルは位置引数から取る。"""
+    masked = mask(cmd)
+    m = RPATCH.search(masked)
+    if not m:
+        return None
+    end = RPATCH_ARGS_END.search(masked, m.end()).start()
+    args, masked_args = cmd[m.end():end], masked[m.end():end]
+    files = RPATCH_HEADER.findall(cmd) + JSON_FILE.findall(cmd)
+    is_edit = bool(files or BLOCK_OPENER.search(cmd))
+    if is_edit and not files:
+        pos = positional_file(args, masked_args)
+        files = [pos] if pos else []
+    return bool(RPATCH_DRY_RUN.search(masked_args)), is_edit, files
+
+
 def edit_event(c):
     """編集する呼び出しなら (種類, 触ったファイル名の集合, 失敗したか)。それ以外は None。"""
     tool, inp, res = c['tool'], c.get('input') or {}, c.get('res') or ''
@@ -50,13 +145,12 @@ def edit_event(c):
     if tool != 'Bash':
         return None
     cmd = inp.get('command') or ''
-    if RPATCH.search(cmd):
-        if RPATCH_DRY_RUN.search(cmd):
-            return None
-        files = RPATCH_HEADER.findall(cmd) + JSON_FILE.findall(cmd)
-        if not files:
-            return None  # rpatch -V や --help など、編集しない呼び出し
-        return 'rpatch', {base(f) for f in files}, 'nothing written' in res
+    call = rpatch_call(cmd)
+    if call:
+        dry, is_edit, files = call
+        if dry or not is_edit:
+            return None  # dry run や、rpatch -V や --help など、編集しない呼び出し
+        return 'rpatch', {base(f) for f in files}, bool(RPATCH_FAILED.search(res))
     if PY.search(cmd) and REPLACE.search(cmd) and WRITE.search(cmd):
         files = FILE_IN_QUOTES.findall(cmd)
         return 'python', {base(f) for f in files}, bool(c.get('err') or PY_FAIL.search(res))
@@ -194,15 +288,16 @@ def main():
                         n['python_replace_unguarded'] += 1
                     if c.get('err') or PY_FAIL.search(res):
                         n['python_replace_failed'] += 1
-                if RPATCH.search(cmd) and not (RPATCH_HEADER.search(cmd) or JSON_FILE.search(cmd)):
+                call = rpatch_call(cmd)
+                if call and not call[1]:
                     # --help や -V など、編集しない呼び出し
                     n['rpatch_discovery'] += 1
-                elif RPATCH.search(cmd):
+                elif call:
                     n['rpatch'] += 1
-                    dry = bool(RPATCH_DRY_RUN.search(cmd))
+                    dry = call[0]
                     if dry:
                         n['rpatch_dry_run'] += 1
-                    if 'nothing written' in res:
+                    if RPATCH_FAILED.search(res):
                         n['rpatch_failed'] += 1
                         if not dry:
                             n['rpatch_failed_real'] += 1

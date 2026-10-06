@@ -11,15 +11,35 @@
 import argparse, glob, json, os, re, unicodedata
 from datetime import datetime
 
-from metrics import JSON_FILE, PY, REPLACE, RPATCH, RPATCH_DRY_RUN, RPATCH_HEADER, SD, WRITE
+from metrics import PY, REPLACE, RPATCH_FAILED, SD, WRITE, rpatch_call
 
 ROOT = os.path.expanduser('~/.claude/projects')
 DEFAULT_EXCLUDE = ('prod-rpatch', 'pi-agent')
 HEREDOC_WRITE = re.compile(r'(^|[;&|(\n])\s*(cat|tee)\s+(-a\s+)?>{0,2}\s*\S+\s*<<|cat\s*>>?\s*\S+\s*<<')
 NODE = re.compile(r'(^|[;&|(\n])\s*node\s')
-# rpatch 自身のエラー行（ほかのコマンドの "error:" と区別するため、rpatch の書式に限る）
-RPATCH_ERROR = re.compile(r'^(rpatch: (?!nothing written).*|error: .*)$', re.M)
+# rpatch 自身のエラー行（連ねた cargo などの "error:" と区別するため、rpatch の書式に限る）
+RPATCH_ERROR = re.compile(r'^(rpatch: (?!nothing written).*|error: edits\[.*)$', re.M)
 COLUMNS = ['rpatch', '失敗', 'help', 'sd', 'cat>', 'Edit', 'Write', 'py置換', 'py他', 'node']
+# 失敗の種類。上から順に、出力に最初に当たったもの
+FAILURE_KINDS = [
+    (r'mixes LF and CRLF', '改行の混在'),
+    (r'is only the start of line', '行の一部: 後半が欠けている'),
+    (r'is only the end of line', '行の一部: 先頭（字下げ）が欠けている'),
+    (r'is in the middle of line', '行の一部: 行の途中'),
+    (r'found without the blank line', '最後の空行がない'),
+    (r'found with different whitespace', '空白・改行の違い'),
+    (r'matches the file up to a point', '途中まで一致して食い違う'),
+    (r'closest line to the first line', '似た行しかない'),
+    (r'not found after "from"', 'TO が見つからない'),
+    (r'" not found', '見つからない（その他）'),
+    (r'would appear twice', 'NEW の末尾が TO と重複'),
+    (r'expected \d+ match|overlap|more than once on the same line', '一致の数が合わない'),
+    (r'file not found', 'ファイルがない'),
+    (r'^rpatch: line \d+:', '入力の書式'),
+    (r'unknown argument|file argument|at most one file', '引数'),
+    (r'read-only|write failed|cannot read', '読み書き'),
+]
+BLOCK_KIND = re.compile(r'^<{7,} (OLD part|OLD|FROM|BEFORE|AFTER)', re.M)
 
 
 def width(s):
@@ -48,7 +68,8 @@ def transcripts(path):
     for f in sorted(glob.glob(sub + '/*.jsonl'), key=os.path.getmtime):
         name = os.path.basename(f)[:-len('.jsonl')]
         try:
-            meta = json.load(open(f[:-len('.jsonl')] + '.meta.json'))
+            with open(f[:-len('.jsonl')] + '.meta.json') as fh:
+                meta = json.load(fh)
             name = meta.get('description') or name
         except (OSError, ValueError):
             pass
@@ -59,7 +80,9 @@ def transcripts(path):
 def load(path):
     """ツール呼び出しを順に。結果（出力・is_error）を対応づける。"""
     uses, results, first_prompt = [], {}, None
-    for line in open(path, errors='replace'):
+    with open(path, errors='replace') as fh:
+        lines = fh.readlines()
+    for line in lines:
         try:
             d = json.loads(line)
         except ValueError:
@@ -76,6 +99,8 @@ def load(path):
             if not isinstance(b, dict):
                 continue
             if b.get('type') == 'tool_use':
+                if 'id' not in b:
+                    continue
                 uses.append({'id': b['id'], 'tool': b.get('name'), 'input': b.get('input') or {},
                              'ts': d.get('timestamp')})
             elif b.get('type') == 'tool_result':
@@ -97,9 +122,9 @@ def classify(u):
         return 'Write', None
     if tool != 'Bash':
         return None, None
-    if RPATCH.search(cmd):
-        files = RPATCH_HEADER.findall(cmd) + JSON_FILE.findall(cmd)
-        return ('rpatch', {os.path.basename(f) for f in files}) if files else ('help', None)
+    call = rpatch_call(cmd)
+    if call:
+        return ('rpatch', {os.path.basename(f) for f in call[2]}) if call[1] else ('help', None)
     if PY.search(cmd):
         return ('py置換' if REPLACE.search(cmd) and WRITE.search(cmd) else 'py他'), None
     if SD.search(cmd):
@@ -112,7 +137,7 @@ def classify(u):
 
 
 def failed(u):
-    return 'nothing written' in u['res'] or bool(RPATCH_ERROR.search(u['res']))
+    return bool(RPATCH_FAILED.search(u['res']) or RPATCH_ERROR.search(u['res']))
 
 
 def pick(query):
@@ -150,12 +175,12 @@ def analyze(path):
             if kind != 'rpatch':
                 continue
             cmd = u['input'].get('command') or ''
-            if failed(u) and not RPATCH_DRY_RUN.search(cmd):
+            if failed(u) and not rpatch_call(cmd)[0]:
                 counts['失敗'] += 1
                 # 同じファイルへの次の rpatch が成功するまで
                 fix = next((v for v in uses[i + 1:] if classify(v)[0] == 'rpatch' and not failed(v)
                             and (classify(v)[1] & files)), None)
-                failures.append(failure(u, name, fix))
+                failures.append(failure(u, name, fix, recovered_by(uses[i + 1:], files)))
         rows.append((name, counts))
     failures.sort(key=lambda f: f['ts'])
     span = [s for s in span if s]
@@ -174,7 +199,28 @@ def analyze(path):
     return result
 
 
-def failure(u, name, fix):
+def failure_kind(res):
+    return next((k for p, k in FAILURE_KINDS if re.search(p, res, re.M)), 'その他')
+
+
+def recovered_by(after, files):
+    """失敗のあと、同じファイルを何で書き換えたか。rpatch ならブロックの種類（OLD+OLD part など）。
+    sd・python・cat> はファイルを特定できないので、次に出てきたものを数える。"""
+    for v in after:
+        kind, fv = classify(v)
+        if kind == 'rpatch' and fv and files and (fv & files):
+            if failed(v):
+                continue
+            used = sorted(set(BLOCK_KIND.findall(v['input'].get('command') or '')))
+            return 'rpatch ' + '+'.join(used) if used else 'rpatch'
+        if kind in ('Edit', 'Write') and os.path.basename(v['input'].get('file_path') or '') in (files or ()):
+            return kind
+        if kind in ('sd', 'py置換', 'cat>'):
+            return kind
+    return None
+
+
+def failure(u, name, fix, via=None):
     errors = RPATCH_ERROR.findall(u['res']) or ['(エラー行なし)']
     # エラー行に続く字下げの行（hint や、どこで食い違ったか）を 2 行まで
     lines = u['res'].splitlines()
@@ -187,6 +233,8 @@ def failure(u, name, fix):
         'error': errors[0],
         'details': details,
         'fix_secs': (local(fix['ts']) - local(u['ts'])).total_seconds() if fix else None,
+        'kind': failure_kind(u['res']),
+        'via': via,
         'input': u['input'].get('command') or '',
         'output': u['res'],
     }

@@ -72,7 +72,7 @@ def main():
     for k in sorted(edits):
         print(f'{k:8} edits={edits[k]:5}  followed_by_syntax_error={broke[k]:4}  ({broke[k] / edits[k]:.1%})')
     total_e, total_b = sum(edits.values()), sum(broke.values())
-    print(f'{"total":8} edits={total_e:5}  followed_by_syntax_error={total_b:4}  ({total_b / total_e:.1%})')
+    print(f'{"total":8} edits={total_e:5}  followed_by_syntax_error={total_b:4}  ({total_b / total_e if total_e else 0:.1%})')
     print('by extension:', collections.Counter(x for s in samples for x in s[1] or ['?']).most_common())
     for kind, exts, c, d, sig in samples[:a.samples]:
         cmd = (d.get('input') or {}).get('command') or ''
@@ -83,4 +83,5 @@ def main():
         print('  error:', res[max(0, k - 150):k + 150].replace('\n', ' | '))
 
 
-main()
+if __name__ == '__main__':
+    main()

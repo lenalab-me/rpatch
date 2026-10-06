@@ -3,7 +3,7 @@
 使い方: python3 tools/log-analysis/dashboard.py [--port 8765] [--hours 24]
 セッションの中身（認証情報を含むことがある）を出すので、127.0.0.1 でだけ待ち受ける。
 """
-import argparse, html, os
+import argparse, collections, html, os
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlparse
@@ -72,7 +72,8 @@ def counts_row(label, c):
 
 
 def failure_html(f, with_name=True, link=None):
-    tag = '<span class="tag warn">終了コード 0</span>' if f['masked'] else ''
+    tag = f'<span class="tag muted">{e(f.get("kind", ""))}</span>'
+    tag += '<span class="tag warn">終了コード 0</span>' if f['masked'] else ''
     fix = (f'<span class="good">→ {f["fix_secs"]:.0f} 秒後に成功</span>' if f['fix_secs'] is not None
            else '<span class="bad">→ 同じファイルへの成功なし</span>')
     where = f' · {e(f["name"])}' if with_name else ''
@@ -81,6 +82,25 @@ def failure_html(f, with_name=True, link=None):
     lines = ''.join(f'<code>{e(l)}</code>' for l in [f['error']] + f['details'])
     return f"""<div class="fail"><div><b>{f['ts']:%m-%d %H:%M:%S}</b>{where}{tag} {fix}</div>{lines}
 <details><summary>入力と出力</summary><pre>{e(f['input'])}</pre><pre>{e(f['output'][:6000])}</pre></details></div>"""
+
+
+def breakdown_html(fails):
+    """失敗の種類ごとの件数、rpatch で立ち直った割合と時間、何で立ち直ったか。"""
+    groups = collections.defaultdict(list)
+    for f in fails:
+        groups[f['kind']].append(f)
+    rows = ''
+    for kind, fs in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        secs = sorted(f['fix_secs'] for f in fs if f['fix_secs'] is not None)
+        median = f'{secs[len(secs) // 2]:.0f} 秒' if secs else '–'
+        vias = collections.Counter(f['via'] or '（なし）' for f in fs).most_common(4)
+        via = '、'.join(f'{e(v)} {n}' for v, n in vias)
+        rows += (f'<tr><td>{e(kind)}</td><td class="n">{len(fs)}</td>'
+                 f'<td class="n">{len(secs)}/{len(fs)}</td><td class="n">{median}</td>'
+                 f'<td class="muted">{via}</td></tr>')
+    return ('<h2>失敗の内訳</h2><div class="wrap"><table><tr><th>種類</th><th class="n">件数</th>'
+            '<th class="n">rpatch で成功</th><th class="n">中央値</th><th>そのあと何で書き換えたか</th></tr>'
+            + rows + '</table></div>')
 
 
 def overview(hours, show_all):
@@ -119,6 +139,8 @@ prod-rpatch・pi-agent も含める</label></form>
                  f'<td class="prompt">{e(s["prompt"][:80])}</td></tr>')
     body += '</table></div>'
     fails = sorted(((f, s) for s in active for f in s['failures']), key=lambda x: x[0]['ts'], reverse=True)
+    if fails:
+        body += breakdown_html([f for f, _ in fails])
     body += f'<h2>最近の rpatch の失敗（新しい順、{min(len(fails), 30)} / {len(fails)} 件）</h2>'
     body += ''.join(failure_html(f, link=f'/s?path={quote(s["rel"])}') for f, s in fails[:30])
     if not fails:
@@ -142,14 +164,29 @@ def detail(rel):
     return page(project(s['rel']), body)
 
 
+def parse_hours(q, default):
+    """?hours= を数として読む。数でなければ既定値、負なら 0。"""
+    try:
+        h = float(q.get('hours', [default])[0])
+    except ValueError:
+        return default
+    return max(0, h) if h == h and h != float('inf') else default  # nan と inf は既定値
+
+
 class Handler(BaseHTTPRequestHandler):
     hours = 24
+    port = 8765
 
     def do_GET(self):
+        # DNS rebinding で別のサイトからセッションの中身を読まれないよう、Host を確かめる
+        host = (self.headers.get('Host') or '').lower()
+        if host not in ('127.0.0.1', 'localhost', f'127.0.0.1:{self.port}', f'localhost:{self.port}'):
+            self.send_error(403)
+            return
         url = urlparse(self.path)
         q = parse_qs(url.query)
         if url.path == '/':
-            hours = int(q.get('hours', [self.hours])[0])
+            hours = parse_hours(q, self.hours)
             out = overview(hours, q.get('all') == ['1'])
         elif url.path == '/s':
             out = detail(q.get('path', [''])[0])
@@ -175,6 +212,7 @@ def main():
     ap.add_argument('--hours', type=int, default=24, help='一覧に出す期間の既定値')
     a = ap.parse_args()
     Handler.hours = a.hours
+    Handler.port = a.port
     server = ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
     print(f'http://127.0.0.1:{a.port}/', flush=True)
     server.serve_forever()
