@@ -29,6 +29,7 @@ Usage: `rpatch --help`. The MCP server: [mcp.md](mcp.md) (Japanese). Japanese ve
 4. **Write** (`write.rs`)
    - If any edit did not match, nothing is written. `--dry-run` writes nothing either.
    - First, the files to be written are checked for read-only ones (a rename would replace a read-only file anyway). `--dry-run` checks this too, so it does not report success where the real run fails.
+   - Likewise, each file is checked to be unchanged since it was read (byte for byte, BOM included); if one changed, nothing is written (exit status 3), so that a change by another agent, a formatter or an editor on the same tree is not silently dropped. Each file is checked again right before its rename, to keep the window small.
    - Each file is written to a temporary file in the same directory (`.rpatch-*`), synced with `fsync`, given the original permissions, and renamed over the original. A file that had a BOM gets it back.
    - If writing a file fails, the files already written are restored to their original content. If restoring also fails, the files left modified are reported.
 5. **Output**
@@ -36,7 +37,7 @@ Usage: `rpatch --help`. The MCP server: [mcp.md](mcp.md) (Japanese). Japanese ve
    - A file whose edits cancel out, so that its content equals the original, shows `= <file>  edits=<n>  unchanged` and is not written (`M` and at_lines would claim a change that is not there).
    - With `--diff`, a unified diff follows, with headers `a/<file>` and `b/<file>`. Absolute paths are shown as they are.
 
-Because files are replaced by rename, hard links are broken (other links keep the old content); rpatch warns when that happens. A file restored after a failed write is restored by rename as well, so its hard links break too. Only the permission bits carry over, not extended attributes or ACLs. Concurrent edits by other processes, and rollback after the process is killed midway, are out of scope.
+Because files are replaced by rename, hard links are broken (other links keep the old content); rpatch warns when that happens. A file restored after a failed write is restored by rename as well, so its hard links break too. Only the permission bits carry over, not extended attributes or ACLs. Changes after reading are caught as above, but a change in the tiny window between that check and the rename, and rollback after the process is killed midway, are out of scope (no lock is taken).
 
 ## Modules
 
@@ -122,7 +123,7 @@ For each file, the byte ranges changed by the edits (`changes`) are kept, and re
 | 0 | Every edit matched (including `--dry-run`) |
 | 1 | An edit did not match, or a file is missing |
 | 2 | Invalid input (unparsable, empty OLD, `old == new`, …) or invalid arguments |
-| 3 | A read or write failed (not UTF-8, read-only, temporary file or rename failed) |
+| 3 | A read or write failed (not UTF-8, read-only, changed on disk after reading, temporary file or rename failed) |
 
 When 1 and 3 both happen, the status is 3. Failing to print the result after the files were written is 3 too (a reader that stopped early, as in `| head`, is not a failure).
 

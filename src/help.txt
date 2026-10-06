@@ -68,6 +68,8 @@ Rules:
   - Each file is replaced via temp file + rename, which breaks hard links to it
     (rpatch warns) and keeps only the permission bits (not extended attributes or
     ACLs). A UTF-8 BOM is kept and takes no part in matching.
+  - A file that changed on disk after rpatch read it is not overwritten: nothing
+    is written, exit status 3; read it again and rerun.
 
 Output:
   Lines that OLD and NEW share at the start or end are not counted in at_lines.
