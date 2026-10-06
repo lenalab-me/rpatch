@@ -4,7 +4,7 @@
 
 ## いまの状態
 
-- v0.10.1。Claude Code（と Codex）が Bash から呼ぶ CLI として、普段の作業で使っている。
+- v0.11.0。Claude Code（と Codex）が Bash から呼ぶ CLI として、普段の作業で使っている。
 - MCP サーバーは Cargo feature `mcp`（既定ではオフ）にある。2026-10-02 に Claude Code と Codex の登録を外し、手元も MCP なしで入れている。
 - 仕様と設計は `docs/design.md`（英語版 `docs/design.en.md`）、LLM 向けの入口は `llms.txt`、使い方は `rpatch --help`。
 - 試用レビュー、実験の記録、集計の結果、CLI と MCP の比較実験の一式は、リポジトリの外の `~/project/prod/rpatch-notes/` に置く。
@@ -19,6 +19,7 @@
 
 - **一致は完全一致、全部か無しか。** 失敗したら何も書かず、行番号と原因を出す。
 - **OLD は行全体だけに一致する。** 長い行の先頭だけを書いて部分一致させると、行の残りが黙って残るため。行の一部は `<<<<<<< OLD part` と明示して書く（v0.8.0、#2）。きっかけは、指示なしのセッションで、行の一部の書き換えのために python や `sd -F` に戻っていたこと。
+- **書式はゆるく、照合は厳しく。** 意味がひとつにしか取れない書き方の揺れは受け付ける（v0.11.0 から、ブロックの直前のパスだけの行や `--- path` を `=== path` として読む）。止めると、エージェントが heredoc や `cat >` に逃げ、確かめずに書いて壊すほうが危ないため（10/4〜10/6 の 7 回はどれも rpatch に戻らなかった）。照合の側は緩めない。
 - **MCP はやめた（2026-10-02）。** MCP のツールは、説明文だけを見て書き方を推測されがちだった（Claude Code は `--- old` / `+++ new` 形式、Codex は引数名 `patch`）。CLI なら CLAUDE.md の案内でまず `--help` を読む。Codex での比較でも、自分から使ったのは CLI 6/6、MCP 2/6。
 - **書き込む前の構文チェック（v1、tree-sitter）は見送った（#3）。** 実際に構文を壊した編集は 670 回中 3 回（0.45%）で、どれもエージェント自身の確認ですぐ見つかっていた。`tools/log-analysis/syntax_breaks.py` で測り直せる。
 - **CI は手動起動だけ。** private リポジトリでは macOS のランナーが 10 倍、Windows が 2 倍の分数を消費するため。配布用のバイナリが要るときに `gh workflow run build.yml`。Windows はまだ一度も動かしていない。
@@ -29,7 +30,7 @@
 2. `python3 tools/log-analysis/metrics.py /tmp/rpatch-calls.jsonl --since … --exclude-proj prod-rpatch --exclude-proj pi-agent` で数値を出す。結果を残すなら `~/project/prod/rpatch-notes/log-analysis/` に置く。
 3. 見る数値: python での置換（`python_replace`、`share_python_replace`）、rpatch での編集（`rpatch`、`--help` などは `rpatch_discovery` に分けて数える）、Edit、失敗とそこからの立ち直り（`rework`）。
 
-1 つのセッションをすぐ見たいときは `python3 tools/log-analysis/session.py [プロジェクト名やセッション ID の一部]`。サブエージェントを含めて、編集の仕方の内訳（rpatch・sd・cat>・Edit・python など）と、rpatch の失敗ごとのエラー・hint・立ち直りまでの秒数を出す。引数なしなら直近のセッション（prod-rpatch と pi-agent を除く）、`--list` で直近のセッションの一覧、`-v` で失敗した呼び出しの入力と出力も出す。ブラウザで見るなら `python3 tools/log-analysis/dashboard.py`（http://127.0.0.1:8765/）。開くたびに集計し直し、10 分ごとに再読み込みする。期間を選べるセッション一覧、最近の rpatch の失敗、セッションごとの内訳を出す。
+1 つのセッションをすぐ見たいときは `python3 tools/log-analysis/session.py [プロジェクト名やセッション ID の一部]`。サブエージェントを含めて、編集の仕方の内訳（rpatch・sd・cat>・Edit・python など）と、rpatch の失敗ごとのエラー・hint・立ち直りまでの秒数を出す。引数なしなら直近のセッション（prod-rpatch と pi-agent を除く）、`--list` で直近のセッションの一覧、`-v` で失敗した呼び出しの入力と出力も出す。ブラウザで見るなら `python3 tools/log-analysis/dashboard.py`（http://127.0.0.1:8765/）。開くたびに集計し直し、10 分ごとに再読み込みする。期間を選べるセッション一覧、失敗の内訳（種類ごとの件数、rpatch で立ち直った割合と時間、そのあと何で書き換えたか）、最近の rpatch の失敗、セッションごとの内訳を出す。
 
 ベースライン（導入前、2026-09-24〜2026-10-01T04:50 UTC、85 セッション）: python での置換 317 回（編集の 75%）、Edit 105 回。
 
@@ -55,6 +56,7 @@
 | 2026-10-02 17:30 | フックを入れた: `~/.claude/settings.json` の PreToolUse（Bash）で `~/.claude/hooks/no-python-replace.py` を呼び、python の置換で書き込むコマンド（`python3 -c`・`python3 - <<`・`python3 <<` のうち `.replace(`/`re.sub(` と書き込みを含むもの）を拒否して rpatch を案内する。サブエージェントにも効く。過去のログ 6,748 回の Bash に当てると、metrics.py の `python_replace` 349 回のうち 345 回を止め、それ以外は止めなかった。以後 `python_replace` は 0 になるはずなので、拒否されたあとに何を使ったかを見る |
 | 2026-10-03 10:55 | v0.10.0: `rpatch FILE <<'EOF'` を受け付ける（`=== ` 行より前のブロックの対象）。10/2 からの Claude Code で `unknown argument` が 7 回あった。BEFORE/AFTER の文字列を 2 行以上にできる（Codex が 2 行以上を書いて 3 回失敗していた）。以後、この 2 つの失敗は 0 になるはず |
 | 2026-10-03 11:00 | Codex の `~/.codex/AGENTS.md` を `~/.claude/CLAUDE.md` と同じ内容にした（それまでは 10/1 の日本語版で、置換は `sd -F`、rpatch は複数行・複数箇所だけ、`--diff` を付ける、だった。元のファイルは `~/.codex/backups/AGENTS.md.20261003-before-claude-sync`）。以後、Codex で 1 か所の置換に rpatch を使うか、apply_patch がどれだけ残るかを見る |
+| 2026-10-06 14:27 | v0.11.0 を入れた。コードの見直しと 1 週間のログから: 空行で終わる FROM/TO/アンカーは空行に一致（空行 1 行の TO が後ろの行を黙って消していた）、TO の重複判定は行単位、改行の混在は専用のエラー、パスだけの行と `--- path` をファイル行として読む、OLD が行の一部としてだけ見つかったら `OLD part` にした結果の行を見せる、打ち消し合った編集は `= <file> … unchanged`。直前 7 日（716 回中 125 回失敗）の内訳: 入力の書式 33（うちファイル行の書き間違い 7）、行の一部（後半欠け）32、NEW と TO の重複 9。以後、ファイル行の書き間違いは 0 に、行の一部の失敗は次の 1 回で直る割合（いま 27/32、中央値 9 秒）と、`sd` や `cat>` に移る件数を見る |
 
 ## リポジトリと要望の受け方
 
