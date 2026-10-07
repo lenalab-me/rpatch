@@ -50,6 +50,8 @@ Blocks:
   one blank line replaces up to the next blank line.
   A line with just a path, or `--- path`, right before a block opener is read as
   `=== path`.
+  Several `=== <file>` lines in a row share the blocks after them: each block is
+  applied to every one of the files, all or nothing. `~/` in a file name is $HOME.
   FROM/TO: to delete an end marker line too, use the line after it as TO.
   BEFORE/AFTER: several AFTER blocks on one anchor stack up in reverse (each goes
   right below the anchor), so put the lines in one NEW instead.

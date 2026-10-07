@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 use crate::block;
 
+#[derive(Clone)]
 pub enum Target {
     /// Replace every match of the text.
     Text(String),

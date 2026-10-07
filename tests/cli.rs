@@ -2153,3 +2153,59 @@ fn partial_old_shows_the_line_that_old_part_would_give() {
         "       1 | #\n       2 | added\n       3 | long line with a lot of text after it\n",
     ));
 }
+
+// --- 2026-10-07: === を続けて並べたとき、~/ のパス -------------------------------------------
+
+/// 続けて並べた `===` 行は 1 つの組になり、後ろのブロックは組のファイル全部に当たる。
+/// 以前は最後のファイルにだけ当たり、終了コード 0 で前のファイルが黙って変わらなかった。
+#[test]
+fn consecutive_file_lines_share_the_blocks() {
+    let dir = setup(&[
+        ("a.txt", "x = 1\n"),
+        ("b.txt", "x = 1\n"),
+        ("c.txt", "x = 1\ny\n"),
+    ]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n=== b.txt\n\n=== c.txt\n<<<<<<< OLD\nx = 1\n=======\nx = 2\n>>>>>>> NEW\n=== c.txt\n<<<<<<< AFTER\ny\n=======\nz\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("M a.txt  edits=1"))
+    .stdout(predicate::str::contains("M b.txt  edits=1"))
+    .stdout(predicate::str::contains("M c.txt  edits=2"));
+    assert_eq!(read(&dir, "a.txt"), "x = 2\n");
+    assert_eq!(read(&dir, "b.txt"), "x = 2\n");
+    // The `=== c.txt` after a block starts a new group: AFTER applies to c.txt only.
+    assert_eq!(read(&dir, "c.txt"), "x = 2\ny\nz\n");
+}
+
+/// 組の中の 1 つのファイルで当たらなければ、どのファイルにも書かない。
+#[test]
+fn a_group_is_all_or_nothing() {
+    let dir = setup(&[("a.txt", "x = 1\n"), ("b.txt", "other\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n=== b.txt\n<<<<<<< OLD\nx = 1\n=======\nx = 2\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains("b.txt"))
+    .stderr(predicate::str::contains("nothing written"));
+    assert_eq!(read(&dir, "a.txt"), "x = 1\n");
+}
+
+/// heredoc の中ではシェルが `~` を展開しないので、`=== ~/path` はホームとして読む。
+#[test]
+fn home_in_a_file_line_is_expanded() {
+    let home = setup(&[(".config/app.txt", "a\n")]);
+    let work = setup(&[]);
+    assert_cmd::cargo_bin_cmd!("rpatch")
+        .current_dir(work.path())
+        .env("HOME", home.path())
+        .write_stdin("=== ~/.config/app.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("M ~/.config/app.txt  edits=1"));
+    assert_eq!(read(&home, ".config/app.txt"), "A\n");
+}

@@ -227,10 +227,16 @@ impl Block {
 
 pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String> {
     let mut edits = Vec::new();
-    let mut file: Option<String> = default_file.map(String::from);
+    // The files the next block applies to: consecutive `=== <file>` lines make a group, and
+    // each block after them is applied to every file in it (seen 2026-10-07: three `===` lines
+    // over one block wrote only the last file, with exit status 0).
+    let mut files: Vec<String> = default_file.into_iter().map(String::from).collect();
     let mut block: Option<Block> = None;
     // Whether a `=== <file>` line came yet: until then, blocks go to `default_file`.
     let mut file_line = false;
+    // Whether a block came after the last `=== <file>` line, which ends its group.
+    let mut block_since_file_line = false;
+    let mut blocks = 0;
 
     for (i, raw) in text.lines().enumerate() {
         // Marker lines are recognized without trailing whitespace, which is invisible
@@ -254,11 +260,15 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                         "line {n}: the file argument `{arg}` is not used, since the first block comes after `=== {path}`\n  hint: drop the file argument, or put its blocks before the first `=== ` line"
                     ));
                 }
-                file = Some(path.to_string());
+                if !file_line || block_since_file_line {
+                    files.clear();
+                }
+                files.push(path.to_string());
                 file_line = true;
+                block_since_file_line = false;
             } else if let Some(opener) = parse_opener(n, line) {
                 let (len, kind, count) = opener?;
-                if file.is_none() {
+                if files.is_empty() {
                     return Err(format!(
                         "line {n}: `{line}` comes before any `=== <file>` line"
                     ));
@@ -297,7 +307,7 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                 }) {
                     // A comment or a sentence written around the blocks.
                     msg += "\n  hint: outside blocks, only `=== <file>` lines and blank lines are allowed; remove this line";
-                } else if file.is_none() {
+                } else if files.is_empty() {
                     // Seen with `rpatch <<'A' && cat > f <<'B'` and the bodies written in the
                     // other order: rpatch then reads the file's content.
                     msg += "\n  hint: with several heredocs on one command line, the shell hands out the bodies in the order the `<<` appear on the line, so the body for rpatch must come first";
@@ -346,15 +356,19 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                         after,
                     },
                 };
-                edits.push(Edit {
-                    file: file.clone().unwrap_or_default(),
-                    target,
-                    new: b.new,
-                    count: b.count,
-                    lines: true,
-                    part,
-                    source_line: Some(b.start),
-                });
+                for file in &files {
+                    edits.push(Edit {
+                        file: file.clone(),
+                        target: target.clone(),
+                        new: b.new.clone(),
+                        count: b.count,
+                        lines: true,
+                        part,
+                        source_line: Some(b.start),
+                    });
+                }
+                blocks += 1;
+                block_since_file_line = true;
             }
             _ if m.is_marker(line) => return Err(b.unexpected(n, line)),
             part => {
@@ -400,8 +414,8 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                 b.part_start
             );
         }
-        if !edits.is_empty() {
-            let blocks = match edits.len() {
+        if blocks > 0 {
+            let blocks = match blocks {
                 1 => "the block".to_string(),
                 n => format!("the {n} blocks"),
             };
