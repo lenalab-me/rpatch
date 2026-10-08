@@ -22,10 +22,13 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 
-# --- python-replace: kept as in the first hook (no-python-replace.py, 2026-10-02) -----------
-# It reads the raw command, before and apart from the lexer, so its decisions stay identical.
+# --- python-replace: from the first hook (no-python-replace.py, 2026-10-02) -----------------
+# It reads the raw command, before and apart from the lexer. Since 0.13.1 it also sees
+# interpreter options before `-` / `-c` (`python3 -I -`, which the first hook let through).
 
-PY = re.compile(r"(^|[;&|(]|&&|\|\|)\s*(\S*/)?python3?(\.\d+)?(\s+(-c\b|-\s|-$)|\s*<<)")
+# Interpreter options may come first: `python3 -I - <<EOF`, `python3 -Ic '...'`, `python3 -W error -`.
+PY = re.compile(r"(^|[;&|(]|&&|\|\|)\s*(\S*/)?python3?(\.\d+)?"
+                r"(\s+(?:-[WX]\s+\S+\s+|-[A-Za-z]+\s+)*(-[A-Za-z]*c\b|-\s|-$)|\s*<<)")
 PY_HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
 REPLACE = re.compile(r"\.replace\(|\bre\.sub\(")
 # The mode is the second argument: `open('a')` names a file called "a" and reads it.
@@ -50,7 +53,7 @@ def python_code(command):
             body_end = j + 1
         if PY.search(line):
             # `python3 - <<EOF`: the heredoc body; `python3 -c '...'`: the rest of the command.
-            yield "\n".join(body) if opener and "-c" not in line else "\n".join(lines[i:])
+            yield "\n".join(body) if opener and not re.search(r"\s-[A-Za-z]*c\b", line) else "\n".join(lines[i:])
         i = body_end
 
 

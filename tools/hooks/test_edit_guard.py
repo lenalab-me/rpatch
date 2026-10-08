@@ -50,6 +50,15 @@ class EditGuardTest(unittest.TestCase):
         self.assertEqual(self.rule("python3 - <<'EOF'\ns=open('t').read()\nopen('t','w').write(s.replace('a','b'))\nEOF"),
                          "python-replace")
         self.assertIsNone(self.rule("python3 - <<'EOF'\nprint(open('t').read().replace('a','b'))\nEOF"))
+        # interpreter options before `-` or `-c` (agents run `python3 -I -`)
+        body = "s=open('t').read()\nopen('t','w').write(s.replace('a','b'))"
+        self.assertEqual(self.rule(f"python3 -I - <<'EOF'\n{body}\nEOF"), "python-replace")
+        self.assertEqual(self.rule(f"cd /x && python3 -u -B - <<'EOF'\n{body}\nEOF"), "python-replace")
+        self.assertEqual(self.rule(f"python3 -W error - <<'EOF'\n{body}\nEOF"), "python-replace")
+        self.assertEqual(self.rule("python3 -Ic \"s=open('t').read(); open('t','w').write(s.replace('a','b'))\""),
+                         "python-replace")
+        self.assertIsNone(self.rule("python3 -I - <<'EOF'\nprint(open('t').read().replace('a','b'))\nEOF"))
+        self.assertIsNone(self.rule("python3 -I script.py"))
 
     def test_sed_in_place_on_tracked_files(self):
         for command in ("sed -i 's/a/b/' tracked.txt", "sed -i '' 's/a/b/' tracked.txt",

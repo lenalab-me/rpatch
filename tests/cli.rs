@@ -2209,3 +2209,32 @@ fn home_in_a_file_line_is_expanded() {
         .stdout(predicate::str::contains("M ~/.config/app.txt  edits=1"));
     assert_eq!(read(&home, ".config/app.txt"), "A\n");
 }
+
+/// 開始行にブロックの本文やファイル名を書いた誤りには、本文は次の行から書くと案内する。
+/// `OLD count=3 part` の並びの誤りには、`part` を先に書くと案内する。
+#[test]
+fn text_on_the_opener_line_gets_a_hint() {
+    let dir = setup(&[("a.txt", "x\n")]);
+    for opener in [
+        "<<<<<<< OLD a.txt",
+        "<<<<<<< AFTER x = 1",
+        "<<<<<<< BEFORE - item",
+    ] {
+        rpatch_raw(
+            dir.path(),
+            &[],
+            &format!("{opener}\nx\n=======\ny\n>>>>>>> NEW\n"),
+        )
+        .code(2)
+        .stderr(predicate::str::contains("start the text on the next line"))
+        .stderr(predicate::str::contains("nothing written"));
+    }
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "<<<<<<< OLD count=3 part\nx\n=======\ny\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains("write `part` before `count=N`"));
+    assert_eq!(read(&dir, "a.txt"), "x\n");
+}

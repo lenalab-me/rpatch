@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "rpatch",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Edit existing files by exact match, all or nothing, with rpatch; and a Bash hook that stops edits nobody checks (python replace, sed -i, overwriting tracked files with cat/echo/printf/tee).",
   "author": {
     "name": "nawts39",

@@ -124,9 +124,17 @@ fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Kind, usize), Str
     let open = &line[..len];
     let rest = &line[len..];
     let expected = || {
-        format!(
+        let mut msg = format!(
             "line {n}: expected `{open} OLD`, `{open} OLD part`, `{open} FROM`, `{open} BEFORE` or `{open} AFTER` (all but FROM may add ` count=N`), found `{line}`"
-        )
+        );
+        // A known word followed by something else: the text of the block was put on the opener line.
+        if [" OLD ", " BEFORE ", " AFTER ", " FROM "]
+            .iter()
+            .any(|w| rest.starts_with(w))
+        {
+            msg += "\n  hint: the opener line takes only `part` and `count=N`; start the text on the next line (a file goes in `=== <file>` or `rpatch FILE`)";
+        }
+        msg
     };
     // `None`: not this word. `Some(Err)`: this word followed by something other than a count.
     let with_count = |word: &str| {
@@ -135,7 +143,14 @@ fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Kind, usize), Str
             Ok(1)
         } else if let Some(v) = c.strip_prefix(" count=") {
             v.trim().parse().map_err(|_| {
-                format!("line {n}: `count=` needs a whole number such as `count=2`, found `{line}`")
+                let mut msg = format!(
+                    "line {n}: `count=` needs a whole number such as `count=2`, found `{line}`"
+                );
+                if v.trim_end().ends_with(" part") {
+                    msg +=
+                        "\n  hint: write `part` before `count=N`, as in `<<<<<<< OLD part count=2`";
+                }
+                msg
             })
         } else {
             Err(expected())
