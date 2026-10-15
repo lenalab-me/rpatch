@@ -7,7 +7,7 @@
 - v0.13.1。Claude Code（と Codex）が Bash から呼ぶ CLI として、普段の作業で使っている。
 - MCP サーバーは Cargo feature `mcp`（既定ではオフ）にある。2026-10-02 に Claude Code と Codex の登録を外し、手元も MCP なしで入れている。
 - 仕様と設計は `docs/design.md`（英語版 `docs/design.en.md`）、LLM 向けの入口は `llms.txt`、使い方は `rpatch --help`。
-- 試用レビュー、実験の記録、集計の結果、CLI と MCP の比較実験の一式は、リポジトリの外の `~/project/prod/rpatch-notes/` に置く。
+- 試用レビュー、実験の記録、集計の結果は、2026-10-15 から `~/project/prod/harness-engineering/` に置く（導入・案内の変更と測った結果は `changes.md`、rpatch だけの試用やベンチは `notes/rpatch/`）。それより前のもの（試用レビュー、CLI と MCP の比較実験の一式、`handoff-history.md`）は `~/project/prod/rpatch-notes/` にそのまま残してある。
 
 ## 入れ方と、普段の使われ方
 
