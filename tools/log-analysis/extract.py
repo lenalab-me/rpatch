@@ -5,6 +5,13 @@ HEAD, TAIL = 1200, 300
 def clip(res):
     if len(res) <= HEAD + TAIL: return res
     return res[:HEAD] + '\n...(中略)...\n' + res[-TAIL:]
+USAGE = 'usage: python3 extract.py [OUT]   (OUT: the JSONL to write, default calls.jsonl)'
+if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+    print(USAGE)
+    sys.exit(0)
+# `extract.py --help` once wrote every session's calls to a file named `--help`, which got committed
+if len(sys.argv) > 1 and sys.argv[1].startswith('-'):
+    sys.exit(f'extract.py: OUT must be a file name, not an option: {sys.argv[1]}\n{USAGE}')
 n=0
 with open(sys.argv[1] if len(sys.argv) > 1 else 'calls.jsonl', 'w') as out:
     for f in glob.glob(root+'/**/*.jsonl', recursive=True):

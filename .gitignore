@@ -2,5 +2,9 @@
 __pycache__/
 calls.jsonl
 tools/bench/out/
-# 集計・比較の結果は ~/project/prod/rpatch-notes/ に置く
+# 集計・比較の結果は ~/project/prod/harness-engineering/notes/rpatch/ に置く（2026-10-15 までは rpatch-notes）
+# セッションのログから抜き出したものは、コマンドや出力を含むのでコミットしない
 tools/log-analysis/*.json
+tools/log-analysis/*.jsonl
+# `extract.py --help` のように、オプションをファイル名と取り違えた出力
+-*
