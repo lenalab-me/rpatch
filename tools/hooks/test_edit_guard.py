@@ -97,7 +97,7 @@ class EditGuardTest(unittest.TestCase):
                         "cat <<< 'x' > /tmp/y"):
             self.assertIsNone(self.rule(command), command)
 
-    # Shapes the 2026-10-07 interrogate review reproduced (A: Fable 5.1, B: GPT-6.1-Sol, C: Grok 4.7).
+    # Shapes that a review by other models, who tried to get around the hook, reproduced.
 
     def test_review_misses_are_blocked(self):
         cases = {

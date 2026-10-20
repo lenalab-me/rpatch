@@ -563,7 +563,7 @@ fn part_preview(
         .map(|l| l.trim_end_matches('\r'))
         .collect();
     // All the lines, not only the cut one: when NEW adds lines before it, the cut
-    // line alone reads unchanged and hides what the edit does (seen 2026-10-06).
+    // line alone reads unchanged and hides what the edit does.
     const MAX_LINES: usize = 8;
     let first = LineIndex::new(content).line_of(p);
     let numbered = |k: usize| gutter(first + k, lines[k]);

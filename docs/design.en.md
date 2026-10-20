@@ -15,10 +15,10 @@ Usage: `rpatch --help`. The MCP server: [mcp.md](mcp.md) (Japanese). Japanese ve
 
 1. **Parse** (`input.rs`, `block.rs`)
    - A leading BOM is removed (Windows PowerShell can add one to what it pipes). Then, if the input starts with `{` (after whitespace), it is JSON; otherwise it is the block format.
-   - In the block format, the CLI's file argument (`rpatch FILE`) is the file for blocks before the first `=== <file>` line. Agents often wrote `rpatch FILE <<'EOF'` and failed (2026-10-03, 7 times in Claude Code). At most one file; not for JSON input. If a `=== ` line for another file comes before the first block, so that the argument is not used, the input is invalid (it is not silently ignored).
-   - A file line written without its `=== `, as a bare path (`main.go`) or a diff header (`--- main.go`), is read as `=== main.go` when the very next line is a block opener. It has only one meaning, and a missing file still fails as file not found, so accepting it cannot break anything. It used to stop with a hint, but none of the 7 cases from 2026-10-04 to 10-06 came back to rpatch: they moved to other means, which write without checking, so stopping was the riskier choice.
-   - Consecutive `=== ` lines (blank lines between are fine) make one group, and each block after them is applied to every file in it: exact matching per file, all or nothing. A `=== ` line with no block has no other meaning. Before, only the last file got the blocks and the others silently stayed as they were, with exit status 0 (2026-10-07, adding one line to CLAUDE.md, AGENTS.md and the Cursor rule at once).
-   - `~/` in a file name is the home directory, in blocks and in JSON, where no shell expands it (the same day, `=== ~/.cursor/rules/global.mdc` failed as file not found).
+   - In the block format, the CLI's file argument (`rpatch FILE`) is the file for blocks before the first `=== <file>` line. Agents often wrote `rpatch FILE <<'EOF'` and failed. At most one file; not for JSON input. If a `=== ` line for another file comes before the first block, so that the argument is not used, the input is invalid (it is not silently ignored).
+   - A file line written without its `=== `, as a bare path (`main.go`) or a diff header (`--- main.go`), is read as `=== main.go` when the very next line is a block opener. It has only one meaning, and a missing file still fails as file not found, so accepting it cannot break anything. Stopping with a hint makes the agent move to other means instead of coming back to rpatch, and those write without checking, so stopping is the riskier choice.
+   - Consecutive `=== ` lines (blank lines between are fine) make one group, and each block after them is applied to every file in it: exact matching per file, all or nothing. A `=== ` line with no block has no other meaning. If only the last file got the blocks, the others would silently stay as they were, with exit status 0.
+   - `~/` in a file name is the home directory, in blocks and in JSON, where no shell expands it.
    - Both become a list of `Edit`, which is then validated as a whole (`input::validate`). An empty OLD, `old == new`, an empty BEFORE/AFTER text, nothing to insert, and `count=0` are input errors (exit 2).
 2. **Load** (`load_files` in `lib.rs`)
    - Each file named by the edits is read once. Paths are resolved against `cwd` with `canonicalize`, so different spellings of the same file (`a.txt` and `./a.txt`, a symlink and its target) become one. A symlink's target is what gets edited.
@@ -90,12 +90,12 @@ An `Edit` has a target (`Target`), the replacement (`new`), and the exact number
 
 - FROM must match exactly once. TO is the first match after the last line of FROM.
 - The text from FROM up to (not including) TO is replaced with NEW; TO is kept. If NEW's last lines are the TO lines, the edit fails (TO would appear twice, a common slip). The comparison is by whole lines, so a TO of `}` with NEW ending in `    }` passes.
-- No TO lines is the end of the file: FROM up to the end is replaced. Agents cut a file's tail with `head -n` and line numbers otherwise (2026-10-02).
+- No TO lines is the end of the file: FROM up to the end is replaced. Agents otherwise cut a file's tail with `head -n` and line numbers.
 - When the last line of FROM, TO or an anchor is blank, it matches a blank line, not the start of a line. An empty start matches any line, so a TO of one blank line used to mean "to the end of the file" and silently dropped the lines after it. Now it means "up to the next blank line".
 
 ### BEFORE / AFTER
 
-- The anchor is one or more lines (or part of them) and must match exactly `count` times. Two matches on the same line are an error. BEFORE inserts before the line where the match starts, AFTER after the line where it ends. Anchors of two or more lines arrived in v0.10.0 (before, only one line was allowed, and Codex often wrote more and failed).
+- The anchor is one or more lines (or part of them) and must match exactly `count` times. Two matches on the same line are an error. BEFORE inserts before the line where the match starts, AFTER after the line where it ends. An anchor may be two or more lines.
 - No existing line is rewritten; NEW's lines are inserted at the line boundary before or after the line containing the anchor. Several AFTER blocks on one anchor end up in reverse order, since each goes right below the anchor.
 
 ## Diagnostics
@@ -103,7 +103,7 @@ An `Edit` has a target (`Target`), the replacement (`new`), and the exact number
 An edit that does not match gets a headline and details.
 
 - **Not found**
-  - In the block format, if the text is found only as part of a line, the message says which line and how (only its start, only its end, or in the middle), and points to `OLD part` or BEFORE/AFTER (`partial_line` in `matcher.rs`). For OLD, it also shows what the lines would become with `OLD part` and the same OLD and NEW (`part_preview`): all the replaced lines, up to 8, not only the cut one, since for an edit that adds lines before the cut line, that line alone read unchanged (seen in a trial on 2026-10-06). Most of these failures are a long line written only up to where the change ends (39 of 52 from 2026-09-29 to 10-06); naming `OLD part` alone could lead an agent whose NEW holds the whole line to switch and keep the rest of the line twice, so the result is shown to choose from.
+  - In the block format, if the text is found only as part of a line, the message says which line and how (only its start, only its end, or in the middle), and points to `OLD part` or BEFORE/AFTER (`partial_line` in `matcher.rs`). For OLD, it also shows what the lines would become with `OLD part` and the same OLD and NEW (`part_preview`): all the replaced lines, up to 8, not only the cut one, since for an edit that adds lines before the cut line, that line alone reads unchanged. Most of these failures are a long line written only up to where the change ends; naming `OLD part` alone could lead an agent whose NEW holds the whole line to switch and keep the rest of the line twice, so the result is shown to choose from.
   - Otherwise the first that applies, in this order (`diagnose::not_found`): a CRLF difference, a whitespace difference (with the line), how far the text matches and where it diverges, the most similar line.
 - **Wrong count**: the lines that matched (up to 10) and how to write the count.
 - **Overlap**: the overlapping ranges (columns, when within a line) and a hint to add surrounding text.
@@ -134,7 +134,7 @@ When 1 and 3 both happen, the status is 3. Failing to print the result after the
 
 - Creating and deleting files (`cat > file <<'EOF'` and `rm` do that).
 - Regular expressions (use another tool such as `sd`).
-- Syntax checks before writing. Only 3 of 670 logged edits broke a file's syntax (0.45%), and the agent's own check caught each right away, so this was dropped.
+- Syntax checks before writing. Edits that break a file's syntax are rare, and the agent's own check catches them right away, so this was dropped.
 
 ## Tests
 

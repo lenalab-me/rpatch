@@ -243,8 +243,8 @@ impl Block {
 pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String> {
     let mut edits = Vec::new();
     // The files the next block applies to: consecutive `=== <file>` lines make a group, and
-    // each block after them is applied to every file in it (seen 2026-10-07: three `===` lines
-    // over one block wrote only the last file, with exit status 0).
+    // each block after them is applied to every file in it (otherwise only the last file
+    // would be written, with exit status 0).
     let mut files: Vec<String> = default_file.into_iter().map(String::from).collect();
     let mut block: Option<Block> = None;
     // Whether a `=== <file>` line came yet: until then, blocks go to `default_file`.
@@ -445,8 +445,8 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
 }
 
 /// A file line written without its `=== `, as a bare path or a diff header (`--- path`),
-/// right before a block opener. Its meaning is plain, and refusing it made agents give up
-/// on rpatch (2026-10-04 to 10-06: 7 times, none came back), so it is read as `=== path`.
+/// right before a block opener. Its meaning is plain, and refusing it makes agents give up
+/// on rpatch, so it is read as `=== path`.
 fn loose_file_line<'a>(text: &str, i: usize, line: &'a str) -> Option<&'a str> {
     let path = line.strip_prefix("--- ").unwrap_or(line).trim();
     if path.is_empty()

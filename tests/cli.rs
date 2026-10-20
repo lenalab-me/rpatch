@@ -900,7 +900,7 @@ fn block_hint_for_short_markers() {
     .stderr(predicate::str::contains("at least 7"));
 }
 
-// --- 3 回目のコメント: 区切りの長さの食い違い -------------------------------------
+// --- 区切りの長さの食い違い -------------------------------------
 
 #[test]
 fn unclosed_block_points_at_markers_of_another_length() {
@@ -961,7 +961,7 @@ fn mistyped_separator_length_is_named_instead_of_longer_markers() {
     .stderr(predicate::str::contains("<<<<<<<<<<< OLD").not());
 }
 
-// --- 4 回目のコメント: 出力の at_lines と、範囲置換で TO を重ねて書いたとき ----------
+// --- 出力の at_lines と、範囲置換で TO を重ねて書いたとき ----------
 
 /// 前後の文脈の行を OLD と NEW の両方に書いても、実際に変わった行だけを示す。
 #[test]
@@ -1228,7 +1228,7 @@ fn file_argument_takes_one_file_and_only_the_block_format() {
 }
 
 /// `=== ` を付け忘れたパスだけの行や、diff 風の `--- path` も、すぐ次がブロックの開始行ならファイル行として読む。
-/// 以前はヒントを出して止めていたが、2026-10-04〜10-06 の 7 回はどれも rpatch に戻らなかった。
+/// ヒントを出して止めると、エージェントは rpatch に戻らず別の手段に移る。
 #[test]
 fn file_line_without_its_prefix_is_read_as_one() {
     // Seen from Codex and Claude Code: `config.js` or `--- config.js` instead of `=== config.js`.
@@ -1728,7 +1728,7 @@ fn guessed_diff_format_gets_the_real_format() {
     assert_eq!(read(&dir, "a.html"), "let x = 1;\n");
 }
 
-// --- 2026-10-06 の見直し: 空行で終わる FROM/TO/アンカー、改行の混在、表面の細部 ----
+// --- 空行で終わる FROM/TO/アンカー、改行の混在、表面の細部 ----
 
 /// TO が空行 1 行なら、次の空行の手前まで。以前は「TO の行なし」と同じになり、後ろの行を黙って消していた。
 #[test]
@@ -2252,7 +2252,7 @@ fn partial_old_shows_the_line_that_old_part_would_give() {
     ));
 }
 
-// --- 2026-10-07: === を続けて並べたとき、~/ のパス -------------------------------------------
+// --- === を続けて並べたとき、~/ のパス -------------------------------------------
 
 /// 続けて並べた `===` 行は 1 つの組になり、後ろのブロックは組のファイル全部に当たる。
 /// 以前は最後のファイルにだけ当たり、終了コード 0 で前のファイルが黙って変わらなかった。

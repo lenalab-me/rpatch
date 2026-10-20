@@ -1,6 +1,6 @@
-"""extract.py の出力から、rpatch の導入効果を測る数値を出す。
+"""extract.py の出力から、rpatch の使われ方を測る数値を出す。
 
-使い方: python3 metrics.py calls.jsonl [--since 2026-09-24] [--until 2026-10-02] [--exclude-proj rpatch]
+使い方: python3 metrics.py calls.jsonl [--since 2026-01-01] [--until 2026-01-31] [--exclude-proj rpatch]
 ts は UTC の ISO 文字列なので、--since/--until は前方一致の文字列比較で絞る。
 """
 import argparse, json, re, collections, statistics

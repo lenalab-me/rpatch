@@ -22,9 +22,9 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 
-# --- python-replace: from the first hook (no-python-replace.py, 2026-10-02) -----------------
-# It reads the raw command, before and apart from the lexer. Since 0.13.1 it also sees
-# interpreter options before `-` / `-c` (`python3 -I -`, which the first hook let through).
+# --- python-replace: from the first hook (no-python-replace.py) ----------------------------
+# It reads the raw command, before and apart from the lexer. It also sees interpreter
+# options before `-` / `-c` (`python3 -I -`, which the first hook let through).
 
 # Interpreter options may come first: `python3 -I - <<EOF`, `python3 -Ic '...'`, `python3 -W error -`.
 PY = re.compile(r"(^|[;&|(]|&&|\|\|)\s*(\S*/)?python3?(\.\d+)?"

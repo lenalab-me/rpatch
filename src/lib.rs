@@ -267,8 +267,7 @@ fn load_files(
     (files, file_of)
 }
 
-/// `~/path` as written in a file line or in JSON, where no shell expands it (seen 2026-10-07:
-/// `=== ~/.cursor/rules/global.mdc` failed as "file not found").
+/// `~/path` as written in a file line or in JSON, where no shell expands it.
 fn expand_home(file: &str) -> PathBuf {
     match (file.strip_prefix("~/"), std::env::var_os("HOME")) {
         (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
