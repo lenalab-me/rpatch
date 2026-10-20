@@ -63,7 +63,7 @@ def python_replace(command):
             "Blocked by a hook: this command rewrites a file with python's replace, which does "
             "nothing silently when the text is not found. Use rpatch instead: it fails with line "
             "numbers when an edit does not match, and edits many places and files at once "
-            "(`rpatch --help | head -40`; `<<<<<<< OLD part` covers part of a line). "
+            "(`rpatch --help`; `<<<<<<< OLD part` covers part of a line). "
             "If python is really needed for something other than replacing text, run it from a script file."
         )
     return None
@@ -440,7 +440,7 @@ def sed_in_place(cmds, files):
                     f"Blocked by a hook: `{name} -i` edits {target.text} in place and does nothing silently "
                     "when the pattern does not match. Use rpatch instead: it fails with line numbers when "
                     "an edit does not match, and edits many places and files at once "
-                    "(`rpatch --help | head -40`; `<<<<<<< OLD part` covers part of a line)."
+                    "(`rpatch --help`; `<<<<<<< OLD part` covers part of a line)."
                 )
     return None
 
@@ -470,7 +470,7 @@ def overwrite_tracked(cmds, files):
                 return (
                     f"Blocked by a hook: `{how}` would replace all of {target.text}, a file git tracks, without "
                     "checking what is in it now. To change part of it, use rpatch "
-                    "(`rpatch --help | head -40`). To rewrite the whole file on purpose, read it first and "
+                    "(`rpatch --help`). To rewrite the whole file on purpose, read it first and "
                     f"write it with the Write tool, or say so with `>|` (`cat >| {target.text} <<'EOF'`)."
                 )
     return None

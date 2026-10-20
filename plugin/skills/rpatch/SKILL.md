@@ -10,7 +10,7 @@ description: Edit existing files from Bash with rpatch, by exact match and all o
 ## Use
 
 - To change a file, use `rpatch`, even for one spot. `sd` is for replacing in a pipe or with a regex.
-- Read the format once: `rpatch --help | head -40`.
+- Read the format once: `rpatch --help`.
 - Quote the heredoc delimiter, and chain follow-up commands on the opening line: `rpatch <<'EOF' && git diff --stat`. A command after the closing `EOF` runs even when the edit failed, and hides the failure.
 - Do not replace with a python heredoc.
 
