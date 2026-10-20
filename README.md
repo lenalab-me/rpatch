@@ -2,7 +2,7 @@
 
 既存のUTF-8ファイルを完全一致でまとめて編集するRust製ツール。複数ファイルの全編集を照合してから書き込み、失敗時には行番号と修正のヒントを返す。CLIとローカルMCPは同じ編集処理を使う。
 
-コーディングエージェント（Claude Code・Codex）が、`sed -i` や python の置換の代わりに使うために、個人で作って毎日使っている。macOS と Windows は CI（手動）でビルドとテストを通している。Linux は CI に無い。ほかの自作の道具（[devsrv](https://github.com/lenalab-me/devsrv)・[agentlog](https://github.com/lenalab-me/agentlog)）やスキルとまとめて入れる手順は、[harness-engineering の SETUP.md](https://github.com/lenalab-me/harness-engineering/blob/main/SETUP.md) にある。
+コーディングエージェント（Claude Code・Codex）が、`sed -i` や python の置換の代わりに使うために、個人で作って使っている。macOS と Windows は CI（手動）でビルドとテストを通している。Linux は CI に無い。ほかの自作の道具（[devsrv](https://github.com/lenalab-me/devsrv)・[agentlog](https://github.com/lenalab-me/agentlog)）やスキルとまとめて入れる手順は、[harness-engineering の SETUP.md](https://github.com/lenalab-me/harness-engineering/blob/main/SETUP.md) にある。
 
 ```sh
 cargo build --locked --release
