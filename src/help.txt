@@ -19,12 +19,10 @@ an argument instead: `rpatch path/to/file <<'EOF'`):
   <<<<<<< FROM / <<<<<<< TO / ======= / >>>>>>> NEW
                            replace from the FROM lines up to the first TO lines after
                            them (no TO lines: to the end of the file); TO is kept, so
-                           NEW must not end with it. The last line of FROM and TO may
-                           be just the start of a line
+                           NEW must not end with it
   <<<<<<< BEFORE / <<<<<<< AFTER / ======= / >>>>>>> NEW   (count=N allowed)
                            insert the NEW lines before/after the lines that contain
-                           the text (any part of one or more lines); no line is
-                           rewritten
+                           the text (any part of one or more lines)
 
 Tips:
   - Quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
@@ -34,27 +32,26 @@ Tips:
 
 Output: `M <file>  edits=<n>  at_lines=3,10-12` per file; at_lines are the lines
 that changed. Errors go to stderr. Options: --diff (also print a unified diff),
--n/--dry-run (write nothing), -h/--help, -V/--version.
+-n/--dry-run (write nothing), -h/--help [TOPIC], -V/--version.
 Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input,
 3 I/O error.
 
-Details
--------
 Blocks:
   Blocks follow the file's line endings (LF or CRLF); a file that mixes both is
   refused (convert it, or use JSON). Trailing whitespace on marker lines is
   ignored. Markers may be longer than 7 characters: a block opened with
   `<<<<<<<<< OLD` (9) ends only at `=========` and `>>>>>>>>> NEW` (9), so lines with
   7-character markers inside it are plain text.
-  A blank last line in FROM, TO, BEFORE or AFTER matches a blank line, so a TO of
-  one blank line replaces up to the next blank line.
+  The last line of FROM and TO may be just the start of a line. A blank last line in
+  FROM, TO, BEFORE or AFTER matches a blank line, so a TO of one blank line replaces
+  up to the next blank line.
   A line with just a path, or `--- path`, right before a block opener is read as
   `=== path`.
   Several `=== <file>` lines in a row share the blocks after them: each block is
   applied to every one of the files, all or nothing. `~/` in a file name is $HOME.
   FROM/TO: to delete an end marker line too, use the line after it as TO.
-  BEFORE/AFTER: several AFTER blocks on one anchor stack up in reverse (each goes
-  right below the anchor), so put the lines in one NEW instead.
+  BEFORE/AFTER: no line is rewritten. Several AFTER blocks on one anchor stack up in
+  reverse (each goes right below the anchor), so put the lines in one NEW instead.
 
 JSON (stdin starting with `{`):
   {"edits": [{"file": "path", "old": "exact text", "new": "replacement", "count": 1},
@@ -73,7 +70,7 @@ Rules:
   - A file that changed on disk after rpatch read it is not overwritten: nothing
     is written, exit status 3; read it again and rerun.
 
-Output:
+Output details:
   Lines that OLD and NEW share at the start or end are not counted in at_lines.
   A deletion shows the line that now sits where the deleted lines were, or the last
   line if the end of the file was deleted. A range edit also prints which lines it

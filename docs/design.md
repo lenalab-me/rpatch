@@ -54,7 +54,8 @@ rename で置き換えるので、ハードリンクは切れる（ほかのリ�
 | `write.rs` | 全部か無しかの書き込みと、失敗したときの巻き戻し |
 | `text.rs` | 行番号の計算と、診断での行の表示 |
 | `mcp.rs` | MCP サーバー（Cargo feature `mcp` のときだけ） |
-| `help.txt` | `--help` の本文 |
+| `help.txt` | `--help` の本文。要約（終了コードの段落まで）と、そのあとの節 |
+| `help.rs` | `--help` の出力。要約は 40 行以内、`--help TOPIC` で節、`--help all` で全文 |
 
 ## 編集の種類
 

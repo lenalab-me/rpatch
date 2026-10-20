@@ -2030,22 +2030,120 @@ fn double_dash_allows_a_file_starting_with_a_dash() {
     assert_eq!(read(&dir, "-a.txt"), "A\n");
 }
 
-/// `rpatch --help | head -40` で、書き方から終了コードまでが読める。
+const HELP_TXT: &str = include_str!("../src/help.txt");
+
+/// `rpatch --help` の標準出力と終了コード。
+fn help(args: &[&str]) -> (Option<i32>, String, String) {
+    let o = assert_cmd::cargo_bin_cmd!("rpatch")
+        .args(args)
+        .output()
+        .unwrap();
+    (
+        o.status.code(),
+        String::from_utf8(o.stdout).unwrap(),
+        String::from_utf8(o.stderr).unwrap(),
+    )
+}
+
+/// help.txt の見出し: 要約のあとの、字下げのない行。
+fn help_headings() -> Vec<&'static str> {
+    let lines: Vec<&str> = HELP_TXT.lines().collect();
+    let exit = lines
+        .iter()
+        .position(|l| l.starts_with("Exit status:"))
+        .unwrap();
+    let blank = exit + lines[exit..].iter().position(|l| l.is_empty()).unwrap();
+    let mut out = Vec::new();
+    for i in blank + 1..lines.len() {
+        if !lines[i].is_empty() && !lines[i].starts_with(' ') {
+            assert!(
+                lines[i - 1].is_empty(),
+                "help.txt: `{}` is not indented but follows a line; a heading needs a blank line before it",
+                lines[i]
+            );
+            out.push(lines[i]);
+        }
+    }
+    out
+}
+
+/// エージェントは `rpatch --help | head -40` で読む。`--help` は書き方から終了コードまでの要約と
+/// 詳細の引き方で、40 行に収まる。
 #[test]
-fn help_and_version() {
+fn the_summary_of_the_help_fits_in_forty_lines() {
+    for args in [&["--help"][..], &["-h"], &["--bogus", "--help"]] {
+        let (code, out, _) = help(args);
+        assert_eq!(code, Some(0));
+        let n = out.lines().count();
+        assert!(
+            n <= 40,
+            "`rpatch {args:?}` prints {n} lines; `head -40` cuts off:\n{out}"
+        );
+        assert!(
+            out.contains("Exit status:")
+                && out.contains("3 I/O error.")
+                && out.contains("<<<<<<< OLD part")
+                && out.contains("rpatch --help all"),
+            "{out}"
+        );
+        assert!(!out.contains("\nBlocks:\n"), "{out}");
+    }
+}
+
+#[test]
+fn help_for_a_topic_has_its_section_and_not_the_others() {
+    let (code, out, _) = help(&["--help", "rules"]);
+    assert_eq!(code, Some(0));
+    assert!(out.starts_with("Rules:\n"), "{out}");
+    assert!(!out.contains("Blocks follow"), "{out}");
+    assert_eq!(help(&["-h", "rules"]), (Some(0), out, String::new()));
+}
+
+#[test]
+fn help_all_is_the_whole_of_help_txt() {
+    let (code, out, _) = help(&["--help", "all"]);
+    assert_eq!(code, Some(0));
+    assert_eq!(out, HELP_TXT);
+}
+
+#[test]
+fn help_for_an_unknown_topic_says_so_and_lists_the_names() {
+    let (code, out, err) = help(&["--help", "foo"]);
+    assert_eq!(code, Some(2));
+    assert!(out.is_empty());
+    let first = err.lines().next().unwrap();
+    assert!(
+        first.contains("unknown") && first.contains("`foo`") && first.contains("blocks"),
+        "{err}"
+    );
+}
+
+/// A section of help.txt that no name asks for would be written but never read.
+#[test]
+fn every_section_of_help_txt_is_asked_for_by_some_name() {
+    let (_, _, err) = help(&["--help", "foo"]);
+    let list = err.lines().next().unwrap().split("try: ").nth(1).unwrap();
+    let names: Vec<&str> = list.split(", ").filter(|n| *n != "all").collect();
+    assert!(names.len() >= 4, "{names:?}");
+    let mut shown = String::new();
+    for name in names {
+        let (code, out, _) = help(&["--help", name]);
+        assert_eq!(code, Some(0), "{name}");
+        shown.push_str(&out);
+    }
+    let headings = help_headings();
+    assert!(headings.len() >= 4, "{headings:?}");
+    for h in headings {
+        assert!(
+            shown.lines().any(|l| l == h),
+            "no topic of `rpatch --help` prints the section `{h}`"
+        );
+    }
+}
+
+#[test]
+fn version() {
     let dir = setup(&[]);
-    let out = rpatch_raw(dir.path(), &["--bogus", "--help"], "")
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let head: Vec<&str> = std::str::from_utf8(&out)
-        .unwrap()
-        .lines()
-        .take(40)
-        .collect();
-    assert!(head.iter().any(|l| l.starts_with("Exit status:")));
-    assert!(head.iter().any(|l| l.contains("3 I/O error.")));
     rpatch_raw(dir.path(), &["-V"], "")
         .success()
         .stdout(predicate::str::starts_with("rpatch "));

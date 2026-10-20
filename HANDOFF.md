@@ -13,7 +13,7 @@
 
 - コードを変えたら `cargo install --locked --path .` で入れ直す（CLI だけ、0.8MB）。MCP を使い直すときは `--features mcp` で入れてから、`claude mcp add --transport stdio --scope user rpatch -- ~/.cargo/bin/rpatch mcp`、`codex mcp add rpatch -- ~/.cargo/bin/rpatch mcp` で登録する。
 - エージェントへの案内は `~/.claude/CLAUDE.md` の 2 行だけ（Codex の `~/.codex/AGENTS.md` と Cursor の `~/.cursor/rules/global.mdc` も 2026-10-03 から同じ内容。CLAUDE.md を変えたら両方にコピーする。ただし T3 から delegate した Cursor の子にはルールが届かないので、タスクの文に書く）（2026-10-02 から英語）: 「Replace: `sd` for replacing in a pipe or with a regex. To change a file, use `rpatch`, even for one spot …」と「Multi-line or multi-place replacements and insertions: `rpatch` (pass blocks on stdin; the format is in `rpatch --help`). Chain follow-up commands on the opening line … Don't replace with a python heredoc」。
-- エージェントは `rpatch --help | head -40` で読むことが多い。help は、書き方・ブロックの種類・Tips・出力・終了コードを先頭 39 行に収めている。help を変えるときは、この 40 行を崩さない。
+- エージェントは `rpatch --help | head -40` で読むことが多い。`--help` は 40 行以内の要約（書き方・ブロックの種類・Tips・出力・終了コード）と、詳しい説明の引き方を出す。詳しい説明は `rpatch --help blocks|json|rules|output`、全文は `rpatch --help all`（文章は `src/help.txt` の 1 か所、引ける名前と節の対応は `src/help.rs` の `TOPICS`）。help を変えるときは、要約の 40 行を崩さず、節を足したら `TOPICS` に名前を足す（足し忘れるとテストが落ちる）。agentlog・devsrv と同じ決まり。
 - Bash の PreToolUse のフックは `~/.claude/hooks/edit_guard.py`（リポジトリの `plugin/hooks/edit_guard.py` へのシンボリックリンク）。2026-10-07 に、初代の `no-python-replace.py`（python の置換だけ）から切り替えた。止めるものと確かめ方は `docs/edit-guard.md`。切り替える前の settings.json は `~/.claude/settings.json.bak-20261007-edit-guard`。
 
 ## 主な判断（理由は handoff-history.md と git のログ）

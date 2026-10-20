@@ -1,3 +1,4 @@
+mod help;
 #[cfg(feature = "mcp")]
 mod mcp;
 
@@ -7,7 +8,6 @@ use std::process::ExitCode;
 
 use rpatch::PatchOptions;
 
-const USAGE: &str = include_str!("help.txt");
 const SHORT_USAGE: &str = "usage: rpatch [--diff] [--dry-run] [FILE] <<'EOF' ... EOF   (see `rpatch --help` for the input format)";
 #[cfg(feature = "mcp")]
 const MCP_USAGE: &str = "usage: rpatch mcp [--cwd <directory>]\nRuns a local MCP server over stdin/stdout. Relative edit paths use --cwd (default: current directory).";
@@ -88,8 +88,17 @@ fn parse_args(args: &[String]) -> Result<Option<PatchOptions>, u8> {
             3
         })
     };
-    if options.iter().any(|arg| arg == "-h" || arg == "--help") {
-        print(USAGE)?;
+    if let Some(k) = options
+        .iter()
+        .position(|arg| arg == "-h" || arg == "--help")
+    {
+        // `--help TOPIC`: the argument right after it, unless that is another option.
+        let topic = options.get(k + 1).filter(|arg| !arg.starts_with('-'));
+        let text = help::render(topic.map(String::as_str)).map_err(|msg| {
+            eprintln!("{msg}");
+            2
+        })?;
+        print(&text)?;
         return Ok(None);
     }
     if options.iter().any(|arg| arg == "-V" || arg == "--version") {

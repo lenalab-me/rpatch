@@ -2,7 +2,7 @@
 
 > rpatch edits existing UTF-8 files by exact match, many edits across many files in one call, all or nothing. It replaces whole lines (OLD), part of a line (OLD part) or a range (FROM/TO), or inserts lines (BEFORE/AFTER). The input is a block format read from stdin, so nothing needs escaping. When an edit does not match, nothing is written and the error shows line numbers and the likely cause.
 
-Run `rpatch --help`; its first 40 lines cover everything needed to use it.
+Run `rpatch --help`: a summary within 40 lines that covers everything needed to use it. `rpatch --help TOPIC` (blocks, json, rules, output) prints the details, `rpatch --help all` the whole text.
 
 ```sh
 rpatch <<'EOF' && git diff --stat
@@ -38,5 +38,5 @@ Key rules:
 ## Docs
 
 - [Design](docs/design.en.md): the processing flow, matching rules for each kind of edit, diagnostics, writing, and exit status.
-- [Help text](src/help.txt): the same text as `rpatch --help`.
+- [Help text](src/help.txt): the whole text; `rpatch --help` prints its summary, `rpatch --help all` all of it.
 - [MCP server](docs/mcp.md): optional, behind the Cargo feature `mcp` (Japanese).
