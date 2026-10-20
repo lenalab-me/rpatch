@@ -38,7 +38,7 @@ EOF
 - `BEFORE_RUN='chmod 444 app.js'` runs a shell snippet in the scratch copy right before rpatch, for states such as read-only files or symlinks.
 - The script prints a summary (version, args, exit code, stdout, stderr, diff) and the evidence path. Its own exit status is 0 even when rpatch fails: read `exit code:` in the summary.
 
-The block format is in `target/debug/rpatch --help` (the first 40 lines are what agents read). Feature recipes with exact inputs and expected results are in `features/`; start at `features/README.md`.
+The block format is in `target/debug/rpatch --help` (a summary that fits in 40 lines; details with `--help blocks|json|rules|output`, everything with `--help all`). Feature recipes with exact inputs and expected results are in `features/`; start at `features/README.md`.
 
 ## Evidence
 

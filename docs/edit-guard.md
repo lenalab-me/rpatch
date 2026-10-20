@@ -27,8 +27,8 @@ python の規則だけは、初代のフックと同じ判定にするため、�
 
 ## 確かめ方
 
-- 単体テスト: `python3 -m unittest discover -s tools/hooks`。2026-10-07 の interrogate（Fable 5.1、GPT-6.1-Sol、Grok 4.7）が実際に再現した、止めるべきもの・通すべきものの例を全部入れてある。
-- 当て直し: 過去の Bash のコマンドを JSONL に書き出し（セッションの中身を含むので、リポジトリの外に置いて終わったら消す）、`python3 tools/hooks/replay.py <file> --samples 5`。規則ごとの件数、初代のフックとの一致、最も遅かったコマンドを出す。
+- 単体テスト: `python3 -m unittest discover -s tools/hooks`。2026-10-07 に、別のモデル（Fable 5.1、GPT-6.1-Sol、Grok 4.7）にこのフックの回避を試させて出た、止めるべきもの・通すべきものの例を全部入れてある。
+- 当て直し: 過去の Bash のコマンドを JSONL に書き出し（セッションの中身を含むので、リポジトリの外に置いて終わったら消す）、`python3 tools/hooks/replay.py <file> --samples 5`。規則ごとの件数、初代のフックとの一致、最も遅かったコマンドを出す。初代のフックとの一致は、`--old` で旧版のフックを渡したときだけ出る（既定は `~/.claude/hooks/no-python-replace.py`。無ければその欄は出ない）。
 
 2026-10-07 に、14 日分 7,890 件で当て直した結果:
 
@@ -45,13 +45,33 @@ python の規則だけは、初代のフックと同じ判定にするため、�
 
 ## 入れ方
 
-- この環境では、`~/.claude/hooks/edit_guard.py` をこのファイルへのシンボリックリンクにし、`~/.claude/settings.json` の PreToolUse（Bash）から呼んでいる。リポジトリのファイルを直せば、そのまま効く。
+- 設定ファイルに書く: `~/.claude/settings.json` の `hooks.PreToolUse` に、次の項目を足す（`/絶対パス/` は、このリポジトリを置いた場所）。リポジトリのファイルを直せば、そのまま効く。
+
+  ```json
+  {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "Bash",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 /絶対パス/rpatch/plugin/hooks/edit_guard.py",
+              "timeout": 10
+            }
+          ]
+        }
+      ]
+    }
+  }
+  ```
+
 - 配る形は `plugin/`（Claude Code のプラグイン。マニフェスト、`hooks/hooks.json`、rpatch のスキル）。`claude plugin validate plugin` で確かめられる。試すときは `claude --plugin-dir plugin`。settings.json のフックと両方を有効にすると、フックが 2 回走る（判定は同じ）。プラグインの版は Cargo.toml と同じにする（単体テストで確かめる）。
 - 集計: `tools/log-analysis/session.py` とダッシュボードは、止められた呼び出しを `阻止` として数え、規則ごとの件数と、止まったあと何で書いたかを出す。metrics.py は `hook_blocked` に規則ごとの件数を出す。
 
 ## 範囲の外
 
-- Codex にもフックの仕組みはあるが、形式が違うので入れていない。Codex への案内は AGENTS.md の文だけ。
+- Codex 向けのフックは無い。
 - `jq . f > f` のような、プログラムの出力での上書きは止めない（生成物を書く正当な使い方と区別できないため）。止めるのは、エージェントが中身を書く `cat`・`echo`・`printf`・`tee` だけ。
 - `pushd` のあとの `popd` で元の場所に戻る場合など、作業ディレクトリが分からなくなったあとの書き込みは見逃す（止めすぎないほうを選んだ）。
 - Write ツールは見ていない（フックは Bash だけ）。Write は既存のファイルを書く前に、読んだことと読んだあとに変わっていないことを確かめるので、丸ごとの書き直しの逃げ先にしている。2026-10-07 に直近 7 日の Write 507 回を見ると、474 回は新しいファイル、上書きは 32 回、Claude Code 自身が「読んだあとに変わった」で止めたものが 1 回。前後の中身が残っていた上書き 25 回では、13 回が半分以上の書き直しで、50 行以上のファイルを 20 行以下だけ変えた（rpatch で足りた）ものは 0 回だった。

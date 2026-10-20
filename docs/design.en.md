@@ -124,7 +124,7 @@ For each file, the byte ranges changed by the edits (`changes`) are kept, and re
 | Code | Meaning |
 |---|---|
 | 0 | Every edit matched (including `--dry-run`) |
-| 1 | An edit did not match, or a file is missing |
+| 1 | An edit did not match, a file is missing, or the file mixes LF and CRLF line endings |
 | 2 | Invalid input (unparsable, empty OLD, `old == new`, …) or invalid arguments |
 | 3 | A read or write failed (not UTF-8, read-only, changed on disk after reading, temporary file or rename failed) |
 
@@ -133,7 +133,7 @@ When 1 and 3 both happen, the status is 3. Failing to print the result after the
 ## Out of scope
 
 - Creating and deleting files (`cat > file <<'EOF'` and `rm` do that).
-- Regular expressions (`sd` does that).
+- Regular expressions (use another tool such as `sd`).
 - Syntax checks before writing. Only 3 of 670 logged edits broke a file's syntax (0.45%), and the agent's own check caught each right away, so this was dropped.
 
 ## Tests

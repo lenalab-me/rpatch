@@ -33,8 +33,8 @@ Tips:
 Output: `M <file>  edits=<n>  at_lines=3,10-12` per file; at_lines are the lines
 that changed. Errors go to stderr. Options: --diff (also print a unified diff),
 -n/--dry-run (write nothing), -h/--help [TOPIC], -V/--version.
-Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input,
-3 I/O error.
+Exit status: 0 ok, 1 an edit did not match, a file is missing, or the file mixes LF
+and CRLF line endings, 2 invalid input, 3 I/O error.
 
 Blocks:
   Blocks follow the file's line endings (LF or CRLF); a file that mixes both is

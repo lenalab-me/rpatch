@@ -3,12 +3,16 @@
 # (bypass mode), in a work directory that must not exist yet. The prompts never
 # mention editing tools: the point is to see what the agent picks on its own.
 #
-# usage: tools/bench/run.sh [work-dir]     (default: ~/project/lab/tasklog)
+# usage: tools/bench/run.sh WORK-DIR
 #        MODEL=claude-sonnet-5-5 by default
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
-work=${1:-$HOME/project/lab/tasklog}
+if [[ $# -lt 1 ]]; then
+  echo "usage: tools/bench/run.sh WORK-DIR   (a directory that does not exist yet)" >&2
+  exit 2
+fi
+work=$1
 model=${MODEL:-claude-sonnet-5-5}
 out="$here/out/$(date +%Y%m%d-%H%M%S)"
 
