@@ -50,8 +50,6 @@ MCPの登録はCodex CLI・デスクトップアプリ・IDEで共有される�
 
 作業ディレクトリを固定しない登録なら、各セッションの作業ディレクトリを基準にする。クライアントで起動位置が異なる場合はCodexの `mcp_servers.rpatch.cwd` を設定するか、rpatchの `--cwd` に絶対パスを渡す。
 
-接続を確かめた記録と CLI／MCP の比較実験は、リポジトリの外（`~/project/prod/rpatch-notes/docs/mcp-experiment.md`）にある。
-
 ## Claude Codeから接続
 
 編集するプロジェクト内で登録する。`--scope local` はそのプロジェクト用の設定。
