@@ -3,6 +3,7 @@ name = "rpatch"
 version = "0.13.1"
 edition = "2024"
 rust-version = "1.88"
+license = "MIT"
 
 [features]
 default = []
