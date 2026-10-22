@@ -2090,6 +2090,31 @@ fn the_summary_of_the_help_fits_in_forty_lines() {
     }
 }
 
+/// 読む側は `head -40` より短く切ることもある（`head -30`・`head -25`・`head -3`）。どこで切られても
+/// 使えるように、編集に要るものを上から並べる: 2 行目に詳細の引き方、20 行目までに書き方と、編集を
+/// 間違えないための注意（`&&` は開きの行に、EOF の後ろの行は失敗しても走る、全部合うまで書かない）。
+#[test]
+fn the_first_lines_of_the_help_carry_what_an_edit_needs() {
+    let (_, out, _) = help(&["--help"]);
+    let lines: Vec<&str> = out.lines().collect();
+    assert!(
+        lines[1].starts_with("Details: rpatch --help TOPIC"),
+        "line 2 should say where the details are:\n{out}"
+    );
+    let top = lines[..20].join("\n");
+    for needed in [
+        "<<'EOF' && git diff --stat",
+        "Quote the heredoc delimiter",
+        "after the closing EOF runs even when the edit failed",
+        "Nothing is written unless every edit matches",
+    ] {
+        assert!(
+            top.contains(needed),
+            "`{needed}` is not in the first 20 lines of `rpatch --help`:\n{out}"
+        );
+    }
+}
+
 #[test]
 fn help_for_a_topic_has_its_section_and_not_the_others() {
     let (code, out, _) = help(&["--help", "rules"]);

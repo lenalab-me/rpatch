@@ -55,7 +55,7 @@ Because files are replaced by rename, hard links are broken (other links keep th
 | `text.rs` | Line numbers, and how lines are shown in diagnostics |
 | `mcp.rs` | The MCP server (only with the Cargo feature `mcp`) |
 | `help.txt` | The text of `--help`: the summary (through the exit status paragraph), then the sections |
-| `help.rs` | What `--help` prints: the summary (within 40 lines), `--help TOPIC` a section, `--help all` everything |
+| `help.rs` | What `--help` prints: the summary (within 40 lines; for a reader who cuts shorter, line 2 names the details, and the usage and the tips come within the first 20 lines), `--help TOPIC` a section, `--help all` everything |
 
 ## Kinds of edits
 

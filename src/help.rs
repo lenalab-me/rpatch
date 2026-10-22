@@ -1,5 +1,8 @@
 //! The help is one file, `help.txt`; nothing in it is written twice. `--help` prints its summary
-//! (up to the blank line after "Exit status:"), so that `head -40` cannot cut it. A section is the
+//! (up to the blank line after "Exit status:"), so that `head -40` cannot cut it. A reader may cut
+//! shorter (`head -30`, `head -3`), so the summary is ordered by what an edit needs first: the line
+//! naming the details right under the title, then the usage, then the tips that keep an edit from
+//! going wrong, and only then the other blocks, the output and the exit status. A section is the
 //! lines from a heading (a line not indented, after a blank line) to the blank line before the next
 //! heading; `--help TOPIC` prints the section that `TOPICS` names.
 
@@ -60,12 +63,12 @@ pub fn render(topic: Option<&str>) -> Result<String, String> {
     let lines: Vec<&str> = TEXT.lines().collect();
     let end = summary(&lines);
     let Some(topic) = topic else {
-        let mut s = join(&lines[..end]);
-        s.push_str(&format!(
-            "\nDetails: rpatch --help TOPIC ({}); rpatch --help all: everything.\n",
-            names()
+        return Ok(format!(
+            "{}\nDetails: rpatch --help TOPIC ({}); rpatch --help all: everything.\n{}",
+            lines[0],
+            names(),
+            join(&lines[1..end])
         ));
-        return Ok(s);
     };
     if topic == "all" {
         return Ok(TEXT.to_string());

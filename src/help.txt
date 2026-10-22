@@ -9,6 +9,12 @@ replacement lines (empty to delete the lines)
 >>>>>>> NEW
 EOF
 
+Tips:
+  - Quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
+  - Chain follow-up commands on the opener line: `rpatch <<'EOF' && git diff --stat`.
+    A command on a line after the closing EOF runs even when the edit failed.
+  - Nothing is written unless every edit matches. Read the error, fix, and rerun.
+
 Blocks (any number, after one or more `=== <file>` lines; with one file, it can be
 an argument instead: `rpatch path/to/file <<'EOF'`):
   <<<<<<< OLD              whole lines, matched only at line starts, exactly once
@@ -23,12 +29,6 @@ an argument instead: `rpatch path/to/file <<'EOF'`):
   <<<<<<< BEFORE / <<<<<<< AFTER / ======= / >>>>>>> NEW   (count=N allowed)
                            insert the NEW lines before/after the lines that contain
                            the text (any part of one or more lines)
-
-Tips:
-  - Quote the heredoc delimiter (<<'EOF'), or the shell expands $ and `.
-  - Chain follow-up commands on the opener line: `rpatch <<'EOF' && git diff --stat`.
-    A command on a line after the closing EOF runs even when the edit failed.
-  - Nothing is written unless every edit matches. Read the error, fix, and rerun.
 
 Output: `M <file>  edits=<n>  at_lines=3,10-12` per file; at_lines are the lines
 that changed. Errors go to stderr. Options: --diff (also print a unified diff),
