@@ -91,6 +91,7 @@ An `Edit` has a target (`Target`), the replacement (`new`), and the exact number
 
 - FROM must match exactly once. TO is the first match after the last line of FROM.
 - The text from FROM up to (not including) TO is replaced with NEW; TO is kept. If NEW's last lines are the TO lines, the edit fails (TO would appear twice, a common slip). The comparison is by whole lines, so a TO of `}` with NEW ending in `    }` passes.
+- JSON `from`/`to` are not checked this way. JSON texts are any part of a line, and a `to` of a few characters such as `)` ends a correct `new` too (`call(` up to `)` replaced with `call(f(a)` gives `call(f(a))`); nothing tells that apart from a slip. Telling them apart by whether "the end of `new` + `to`" occurs in the original file does not work either: the usual slip (`{ x }` to `{ z }`, giving `{ z }}`) has no `}}` in the original. Only the block format, compared by whole lines, refuses it.
 - No TO lines is the end of the file: FROM up to the end is replaced. Agents otherwise cut a file's tail with `head -n` and line numbers.
 - When the last line of FROM, TO or an anchor is blank, it matches a blank line, not the start of a line. An empty start matches any line, so a TO of one blank line used to mean "to the end of the file" and silently dropped the lines after it. Now it means "up to the next blank line".
 

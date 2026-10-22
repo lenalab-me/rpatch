@@ -1222,6 +1222,20 @@ fn range_rejects_new_ending_with_the_kept_to() {
     assert_eq!(read(&dir, "a.rs"), original);
 }
 
+/// JSON の from/to は行の一部どうしなので、new の末尾が to と同じでも止めない。
+/// `)` を to にした `call(` の範囲を `call(f(a)` にするのは正しい編集。
+#[test]
+fn json_range_new_may_end_with_the_to_text() {
+    let dir = setup(&[("a.js", "call(a);\n")]);
+    rpatch(
+        dir.path(),
+        &[],
+        &json!({"edits": [{"file": "a.js", "from": "call(", "to": ")", "new": "call(f(a)"}]}),
+    )
+    .success();
+    assert_eq!(read(&dir, "a.js"), "call(f(a));\n");
+}
+
 // --- v0.4.1 の試用メモ: BEFORE / AFTER など ---------------
 
 const PARA: &str =

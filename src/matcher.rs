@@ -166,18 +166,16 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                 ));
             };
             let end = after + q;
-            let kept = if edit.lines {
-                &content[end..match_line_end(content, end + to_text.len())]
-            } else {
-                to_text
-            };
-            // Whole lines in the block format: NEW ending in `    }` does not repeat a TO of `}`.
-            let repeated = match new.strip_suffix(kept) {
-                Some(rest) => !edit.lines || rest.is_empty() || rest.ends_with('\n'),
-                None => false,
+            // An easy slip: TO is kept, so repeating its lines at the end of NEW doubles
+            // them. Compared by whole lines: NEW ending in `    }` does not repeat a TO of
+            // `}`. Not for JSON, whose texts are any part of a line: a "to" of `)` ends a
+            // "new" of `call(f(a)` too, and nothing tells that apart from a slip.
+            let repeated = edit.lines && {
+                let kept = &content[end..match_line_end(content, end + to_text.len())];
+                new.strip_suffix(kept)
+                    .is_some_and(|rest| rest.is_empty() || rest.ends_with('\n'))
             };
             if repeated {
-                // An easy slip: TO is kept, so repeating it at the end of NEW doubles it.
                 let idx = LineIndex::new(content);
                 let line = idx.line_of(end);
                 return Err(Mismatch {
