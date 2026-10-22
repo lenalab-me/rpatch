@@ -237,8 +237,14 @@ impl Block {
 
     /// Whether the words after `NEW` on a closing line say what the opener says. Words
     /// that say something else have two readings, so they are not taken as the closer.
+    /// A FROM opener takes no count, so neither does its closer.
     fn fits(&self, (part, count): (bool, Option<usize>)) -> bool {
-        (!part || self.kind == Kind::ReplacePart) && count.is_none_or(|c| c == self.count)
+        (!part || self.kind == Kind::ReplacePart)
+            && match count {
+                None => true,
+                Some(_) if self.kind == Kind::Range => false,
+                Some(c) => c == self.count,
+            }
     }
 
     /// Error for a closing line whose words after `NEW` say something the opener does not.

@@ -1055,6 +1055,23 @@ fn closer_with_other_words_is_still_refused() {
     assert_eq!(read(&dir, "a.txt"), "a\n");
 }
 
+/// FROM の開きは count を取らないので、閉じの `count=1` も開きと食い違うものとして止める。
+#[test]
+fn closer_with_a_count_after_from_is_refused() {
+    let dir = setup(&[("a.txt", "a\nb\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< FROM\na\n<<<<<<< TO\nb\n=======\nA\n>>>>>>> NEW count=1\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "does not match the opener `<<<<<<< FROM`",
+    ))
+    .stderr(predicate::str::contains("FROM takes no count"));
+    assert_eq!(read(&dir, "a.txt"), "a\nb\n");
+}
+
 /// 9 個で開いて 7 個の `>>>>>>> NEW part` で閉じたら、長さの違いを指す。
 #[test]
 fn closer_with_words_of_another_length_is_pointed_at() {
