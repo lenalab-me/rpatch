@@ -2388,6 +2388,28 @@ fn unreadable_files_are_io_errors() {
     }
 }
 
+/// FIFO は読むと書き手を待ち続けるので、普通のファイルでなければ読まずに止める。
+#[cfg(unix)]
+#[test]
+fn a_fifo_is_refused_without_waiting() {
+    let dir = setup(&[]);
+    let made = std::process::Command::new("mkfifo")
+        .arg(dir.path().join("pipe"))
+        .status()
+        .unwrap();
+    assert!(made.success());
+    assert_cmd::cargo_bin_cmd!("rpatch")
+        .current_dir(dir.path())
+        .arg("pipe")
+        .write_stdin("<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n")
+        .timeout(std::time::Duration::from_secs(10))
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains(
+            "pipe: cannot read: not a regular file",
+        ));
+}
+
 /// 2 ファイル目の書き込みに失敗したら、1 ファイル目を元に戻す。
 #[cfg(unix)]
 #[test]

@@ -23,7 +23,7 @@ Usage: `rpatch --help`. The MCP server: [mcp.md](mcp.md) (Japanese). Japanese ve
    - Both become a list of `Edit`, which is then validated as a whole (`input::validate`). An empty OLD, `old == new`, an empty BEFORE/AFTER text, nothing to insert, and `count=0` are input errors (exit 2).
 2. **Load** (`load_files` in `lib.rs`)
    - Each file named by the edits is read once. Paths are resolved against `cwd` with `canonicalize`, so different spellings of the same file (`a.txt` and `./a.txt`, a symlink and its target) become one. A symlink's target is what gets edited.
-   - A file that is not UTF-8 fails to load (exit 3). A leading BOM is removed and remembered; it takes no part in matching.
+   - A file that is not UTF-8 fails to load (exit 3), and so does a path that is not a regular file (a FIFO would make the read wait for a writer forever). A leading BOM is removed and remembered; it takes no part in matching.
    - The permissions and the hard link count are remembered too.
 3. **Match and apply** (`matcher.rs`, `apply_edits` in `lib.rs`)
    - Edits are applied in input order, each to the file's current content: a later edit to the same file sees the result of the earlier ones.
@@ -127,7 +127,7 @@ For each file, the byte ranges changed by the edits (`changes`) are kept, and re
 | 0 | Every edit matched (including `--dry-run`) |
 | 1 | An edit did not match, a file is missing, or the file mixes LF and CRLF line endings |
 | 2 | Invalid input (unparsable, empty OLD, `old == new`, …) or invalid arguments |
-| 3 | A read or write failed (not UTF-8, read-only, changed on disk after reading, temporary file or rename failed) |
+| 3 | A read or write failed (not UTF-8, not a regular file such as a FIFO or a directory, read-only, changed on disk after reading, temporary file or rename failed) |
 
 When 1 and 3 both happen, the status is 3. Failing to print the result after the files were written is 3 too (a reader that stopped early, as in `| head`, is not a failure).
 

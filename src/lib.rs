@@ -324,8 +324,15 @@ fn load_failure(e: &Edit, cwd: &Path, err: io::Error) -> LoadFailure {
 /// Reads a file as UTF-8. Returns the text without a leading BOM, the permissions,
 /// whether there was a BOM, and the number of hard links.
 fn read_file(path: &Path) -> io::Result<(String, Permissions, bool, u64)> {
-    let bytes = fs::read(path)?;
     let meta = fs::metadata(path)?;
+    // Reading a FIFO would wait for a writer forever, and a device has no end.
+    if !meta.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    let bytes = fs::read(path)?;
     #[cfg(unix)]
     let links = std::os::unix::fs::MetadataExt::nlink(&meta);
     #[cfg(not(unix))]
