@@ -5,8 +5,12 @@
 コーディングエージェント（Claude Code・Codex）が、`sed -i` や python の置換の代わりに使うために、個人で作って使っている。macOS と Windows は CI（手動）でビルドとテストを通している。Linux は CI に無い。ほかの自作の道具（[devsrv](https://github.com/lenalab-me/devsrv)・[agentlog](https://github.com/lenalab-me/agentlog)）やスキルとまとめて入れる手順は、[harness-engineering の SETUP.md](https://github.com/lenalab-me/harness-engineering/blob/main/SETUP.md) にある。
 
 ```sh
+git clone https://github.com/lenalab-me/rpatch.git && cd rpatch
 cargo build --locked --release
-./target/release/rpatch --diff <<'EOF_INPUT'
+bin=$PWD/target/release/rpatch
+# 試すファイルは一時ディレクトリに作る
+cd "$(mktemp -d)" && printf 'const value = 1;\n' > app.js
+"$bin" --diff <<'EOF_INPUT'
 === app.js
 <<<<<<< OLD
 const value = 1;

@@ -2255,6 +2255,29 @@ fn llms_txt_states_the_exit_status_as_the_help_does() {
     assert_eq!(words(&format!("Exit status:{llms}")), words(&help));
 }
 
+/// README の最初の例は、そのとおりに作ったファイルに当たる（前はファイルが無く file not found）。
+#[test]
+fn the_readme_example_applies_to_the_file_it_makes() {
+    let readme = include_str!("../README.md");
+    let made = readme
+        .lines()
+        .find_map(|l| l.split_once("printf '")?.1.split_once("' > app.js"))
+        .expect("README makes app.js with printf")
+        .0
+        .replace("\\n", "\n");
+    let input: String = readme
+        .split_once("<<'EOF_INPUT'\n")
+        .and_then(|(_, rest)| rest.split_once("EOF_INPUT\n"))
+        .expect("README has the heredoc")
+        .0
+        .to_string();
+    let dir = setup(&[("app.js", &made)]);
+    rpatch_raw(dir.path(), &["--diff"], &input)
+        .success()
+        .stdout(predicate::str::contains("+const value = 2;"));
+    assert_eq!(read(&dir, "app.js"), "const value = 2;\n");
+}
+
 /// help.txt の見出し: 要約のあとの、字下げのない行。
 fn help_headings() -> Vec<&'static str> {
     let lines: Vec<&str> = HELP_TXT.lines().collect();
