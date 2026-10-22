@@ -32,7 +32,7 @@ Key rules:
 - Each text must match exactly once (or `count=N` times, as in `<<<<<<< OLD count=2`). Overlapping matches are an error.
 - Edits to one file apply in order; each sees the result of the previous one.
 - Quote the heredoc delimiter (`<<'EOF'`). Chain follow-up commands on the opener line (`rpatch <<'EOF' && …`); a command on a line after the closing EOF runs even when the edit failed.
-- Exit status: 0 ok, 1 an edit did not match or a file is missing, 2 invalid input, 3 I/O error.
+- Exit status: 0 ok, 1 an edit did not match, a file is missing, or the file mixes LF and CRLF line endings, 2 invalid input, 3 I/O error.
 - rpatch does not create or delete files and has no regular expressions.
 
 ## Docs

@@ -229,8 +229,14 @@ fn invalid_input_and_missing_file_return_cli_diagnostics() {
         "tools/call",
         json!({"name":"rpatch", "arguments":{"input":"x", "unknown":true}}),
     );
-    // Argument schema failures belong to the SDK's protocol handling.
-    assert!(invalid_args.get("error").is_some() || invalid_args["result"]["isError"] == true);
+    // Arguments that do not fit the schema come back as a tool error, as docs/mcp.md says.
+    assert_eq!(invalid_args["result"]["isError"], true, "{invalid_args}");
+    assert!(text(&invalid_args["result"]).contains("unknown field `unknown`"));
+    let wrong_type = session.request(
+        "tools/call",
+        json!({"name":"rpatch", "arguments":{"input":"x", "diff":"yes"}}),
+    );
+    assert_eq!(wrong_type["result"]["isError"], true, "{wrong_type}");
     let unknown_tool = session.request("tools/call", json!({"name":"missing", "arguments":{}}));
     assert!(unknown_tool.get("error").is_some());
     assert!(session.request("ping", json!({})).get("result").is_some());

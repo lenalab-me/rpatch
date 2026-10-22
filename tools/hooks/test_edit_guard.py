@@ -89,6 +89,12 @@ class EditGuardTest(unittest.TestCase):
                         "jq . tracked.txt > out.json", "cat tracked.txt > /dev/null"):
             self.assertIsNone(self.rule(command), command)
 
+    def test_grouped_redirections_pass(self):
+        # Out of scope (docs/edit-guard.md): the redirection follows the group, not a command in it.
+        for command in ("{ echo x; } > tracked.txt", "( echo x ) > tracked.txt",
+                        "if true; then echo x; fi > tracked.txt"):
+            self.assertIsNone(self.rule(command), command)
+
     def test_text_inside_quotes_and_bodies_is_not_a_command(self):
         for command in ("git commit -m \"cat > tracked.txt; sed -i s/a/b/ tracked.txt\"",
                         "cat > notes.md <<'EOF'\nsed -i 's/a/b/' tracked.txt\necho x > tracked.txt\nEOF",

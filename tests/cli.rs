@@ -1186,6 +1186,12 @@ fn empty_json_to_runs_to_the_end_of_the_file() {
     )
     .success();
     assert_eq!(read(&dir, "a.txt"), "a\n");
+    // The help's JSON section says so.
+    assert!(
+        help(&["--help", "json"])
+            .1
+            .contains("An empty \"to\" runs to the\n  end of the file.")
+    );
 }
 
 /// FROM のあとに TO を書かずに `=======` が来たら、OLD を勧め、FROM の順番を示す。
@@ -2230,6 +2236,23 @@ fn help(args: &[&str]) -> (Option<i32>, String, String) {
         String::from_utf8(o.stdout).unwrap(),
         String::from_utf8(o.stderr).unwrap(),
     )
+}
+
+/// llms.txt の終了コードの行は、help の要約と同じことを言う。
+#[test]
+fn llms_txt_states_the_exit_status_as_the_help_does() {
+    let words = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let help = HELP_TXT
+        .lines()
+        .skip_while(|l| !l.starts_with("Exit status:"))
+        .take_while(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let llms = include_str!("../llms.txt")
+        .lines()
+        .find_map(|l| l.strip_prefix("- Exit status:"))
+        .unwrap();
+    assert_eq!(words(&format!("Exit status:{llms}")), words(&help));
 }
 
 /// help.txt の見出し: 要約のあとの、字下げのない行。
