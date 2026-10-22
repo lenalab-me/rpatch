@@ -215,6 +215,9 @@ fn load_files(
     let mut by_path: HashMap<PathBuf, usize> = HashMap::new();
     let mut failures: Vec<LoadFailure> = Vec::new();
     let mut file_of = Vec::with_capacity(edits.len());
+    // (block, file) pairs seen: a `===` group that names one file twice, in two spellings
+    // or by a symlink and its target, applies each of its blocks to that file once.
+    let mut seen: Vec<(usize, usize)> = Vec::new();
 
     for (i, e) in edits.iter().enumerate() {
         if let Some(f) = failures.iter_mut().find(|f| f.file == e.file) {
@@ -248,7 +251,31 @@ fn load_files(
                 }
             });
         match loaded {
-            Ok(k) => file_of.push(Some(k)),
+            Ok(k) => match e.source_line {
+                Some(block) if seen.contains(&(block, k)) => {
+                    let f = &mut files[k];
+                    let note = if e.file == f.display {
+                        format!(
+                            "note: `{}` is named twice in one `===` group; each block is applied to it once",
+                            e.file
+                        )
+                    } else {
+                        format!(
+                            "note: `{}` is the same file as `{}`; each block is applied to it once",
+                            e.file, f.display
+                        )
+                    };
+                    if !f.notes.contains(&note) {
+                        f.notes.push(note);
+                    }
+                    file_of.push(None);
+                }
+                Some(block) => {
+                    seen.push((block, k));
+                    file_of.push(Some(k));
+                }
+                None => file_of.push(Some(k)),
+            },
             Err(mut f) => {
                 f.edits.push(i);
                 failures.push(f);

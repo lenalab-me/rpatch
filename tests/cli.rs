@@ -2459,6 +2459,53 @@ fn consecutive_file_lines_share_the_blocks() {
     assert_eq!(read(&dir, "c.txt"), "x = 2\ny\nz\n");
 }
 
+/// 組の中で同じファイルを 2 度挙げても（同じ名前、書き方違い、symlink とリンク先）、ブロックは
+/// そのファイルに 1 回だけ当たる。前は 2 回当たり、AFTER が黙って 2 行入っていた。
+#[test]
+fn a_group_naming_one_file_twice_applies_each_block_once() {
+    let dir = setup(&[("a.txt", "anchor\n"), ("b.txt", "x\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n=== ./a.txt\n=== a.txt\n<<<<<<< AFTER\nanchor\n=======\nnew\n>>>>>>> NEW\n=== b.txt\n=== ./b.txt\n<<<<<<< OLD\nx\n=======\nx\ny\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("M a.txt  edits=1  at_lines=2\n"))
+    .stdout(predicate::str::contains(
+        "note: `./a.txt` is the same file as `a.txt`; each block is applied to it once",
+    ))
+    .stdout(predicate::str::contains(
+        "note: `a.txt` is named twice in one `===` group",
+    ))
+    .stdout(predicate::str::contains("M b.txt  edits=1"));
+    assert_eq!(read(&dir, "a.txt"), "anchor\nnew\n");
+    assert_eq!(read(&dir, "b.txt"), "x\ny\n");
+    // Separate groups for one file are separate edits, applied in order.
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< AFTER\nanchor\n=======\none\n>>>>>>> NEW\n=== ./a.txt\n<<<<<<< AFTER\nanchor\n=======\ntwo\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("M a.txt  edits=2"));
+    assert_eq!(read(&dir, "a.txt"), "anchor\ntwo\none\nnew\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_group_naming_a_symlink_and_its_target_applies_each_block_once() {
+    let dir = setup(&[("a.txt", "anchor\n")]);
+    std::os::unix::fs::symlink("a.txt", dir.path().join("link")).unwrap();
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== link\n=== a.txt\n<<<<<<< AFTER\nanchor\n=======\nnew\n>>>>>>> NEW\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("M link  edits=1"));
+    assert_eq!(read(&dir, "a.txt"), "anchor\nnew\n");
+}
+
 /// 組の中の 1 つのファイルで当たらなければ、どのファイルにも書かない。
 #[test]
 fn a_group_is_all_or_nothing() {
