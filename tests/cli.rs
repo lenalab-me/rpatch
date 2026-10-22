@@ -961,6 +961,146 @@ fn mistyped_separator_length_is_named_instead_of_longer_markers() {
     .stderr(predicate::str::contains("<<<<<<<<<<< OLD").not());
 }
 
+// --- 閉じ行の書き間違い -----------------------------------------
+
+/// 開きに合わせて閉じにも `part` や `count=N` を書いても、閉じとして読む。
+#[test]
+fn closer_may_repeat_the_openers_part_and_count() {
+    let dir = setup(&[("a.md", "pic が 0 と出る。\nx\nx\nkeep y\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.md\n<<<<<<< OLD part\n0\n=======\n2\n>>>>>>> NEW part\n<<<<<<< OLD count=2\nx\n=======\nX\n>>>>>>> NEW count=2\n<<<<<<< OLD part count=1\ny\n=======\nY\n>>>>>>> NEW part\n",
+    )
+    .success()
+    .stdout(predicate::str::contains("edits=3"));
+    assert_eq!(read(&dir, "a.md"), "pic が 2 と出る。\nX\nX\nkeep Y\n");
+}
+
+/// 長い区切りでも同じ。中の 7 個の `>>>>>>> NEW part` はただの本文のまま。
+#[test]
+fn longer_closer_may_repeat_the_openers_part() {
+    let dir = setup(&[("a.md", "see here\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.md\n<<<<<<<<< OLD part\nhere\n=========\nthis:\n>>>>>>> NEW part\n>>>>>>>>> NEW part\n",
+    )
+    .success();
+    assert_eq!(read(&dir, "a.md"), "see this:\n>>>>>>> NEW part\n");
+}
+
+/// 開きと食い違う語は、開きと閉じのどちらを信じるかで当てる箇所が変わるので、受け付けない。
+#[test]
+fn closer_with_a_count_the_opener_lacks_is_refused_with_the_fixed_opener() {
+    let dir = setup(&[("a.txt", "x\nx\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\nx\n=======\n>>>>>>> NEW count=2\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "line 5: the closing line `>>>>>>> NEW count=2` does not match the opener `<<<<<<< OLD` at line 2",
+    ))
+    .stderr(predicate::str::contains(
+        "open it with `<<<<<<< OLD count=2` if that is meant, and close it with `>>>>>>> NEW`",
+    ))
+    .stderr(predicate::str::contains("nothing written"));
+    assert_eq!(read(&dir, "a.txt"), "x\nx\n");
+}
+
+#[test]
+fn closer_with_part_the_opener_lacks_is_refused_with_the_fixed_opener() {
+    let dir = setup(&[("a.txt", "a b\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD count=2\nb\n=======\nB\n>>>>>>> NEW part\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "open it with `<<<<<<< OLD part count=2` if that is meant",
+    ));
+    assert_eq!(read(&dir, "a.txt"), "a b\n");
+}
+
+#[test]
+fn closer_with_part_after_an_insert_says_part_is_only_for_old() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< AFTER\na\n=======\nb\n>>>>>>> NEW part\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "`part` is only for `<<<<<<< OLD part`; close the AFTER block with `>>>>>>> NEW`",
+    ));
+}
+
+/// NEW の後ろのほかの語（Git の衝突の印 `>>>>>>> main` など）は、今までどおり閉じとは読まない。
+#[test]
+fn closer_with_other_words_is_still_refused() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\na\n=======\nb\n>>>>>>> NEW done\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "unexpected `>>>>>>> NEW done` inside the NEW part",
+    ));
+    assert_eq!(read(&dir, "a.txt"), "a\n");
+}
+
+/// 9 個で開いて 7 個の `>>>>>>> NEW part` で閉じたら、長さの違いを指す。
+#[test]
+fn closer_with_words_of_another_length_is_pointed_at() {
+    let dir = setup(&[("a.txt", "a b\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<<<< OLD part\nb\n=========\nB\n>>>>>>> NEW part\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "line 6 has `>>>>>>> NEW part` (7 characters), but this block's markers are 9 characters long",
+    ));
+}
+
+/// 閉じの代わりに `=======` を書いて入力が終わった。NEW の本文に `=======`
+/// （Markdown の見出しの下線）があり得るので受け付けず、閉じの書き方を示す。
+#[test]
+fn separator_in_place_of_the_closer_at_the_end_says_so() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\na\n=======\nb\n=======\n\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "a block ends with `>>>>>>> NEW`, not `=======`; write it in place of line 6?",
+    ))
+    .stderr(predicate::str::contains("missing `>>>>>>> NEW`").not());
+}
+
+#[test]
+fn second_separator_right_before_the_closer_says_to_remove_it() {
+    let dir = setup(&[("a.txt", "a\n")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== a.txt\n<<<<<<< OLD\na\n=======\nb\n=======\n>>>>>>> NEW\n",
+    )
+    .code(2)
+    .stderr(predicate::str::contains(
+        "the NEW part already started at line 4; remove the second `=======` at line 6?",
+    ));
+}
+
 // --- 出力の at_lines と、範囲置換で TO を重ねて書いたとき ----------
 
 /// 前後の文脈の行を OLD と NEW の両方に書いても、実際に変わった行だけを示す。

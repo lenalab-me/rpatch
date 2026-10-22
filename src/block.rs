@@ -28,6 +28,7 @@
 //!
 //! Markers are 7 or more characters long. A block opened with N `<` is closed only by
 //! markers of length N, so lines with markers of another length are plain content.
+//! The closing line may repeat the opener's `part` and `count=N` (`>>>>>>> NEW part`).
 
 use crate::input::{Edit, Target};
 
@@ -59,6 +60,30 @@ impl Markers {
                 .strip_prefix(&self.open)
                 .or_else(|| line.strip_prefix(&self.close_prefix))
                 .is_some_and(|rest| rest.starts_with(' '))
+    }
+
+    /// The words after `NEW` on a closing line such as `>>>>>>> NEW part` or
+    /// `>>>>>>> NEW count=2`, written to mirror the opener: (`part`, count). `None` if
+    /// the line is not a closing line with such words.
+    fn closer_words(&self, line: &str) -> Option<(bool, Option<usize>)> {
+        let rest = line.strip_prefix(&self.close)?.strip_prefix(' ')?;
+        let (mut part, mut count) = (false, None);
+        for word in rest.split_whitespace() {
+            if word == "part" && !part {
+                part = true;
+            } else if let Some(c) = word.strip_prefix("count=").and_then(|c| c.parse().ok())
+                && count.is_none()
+            {
+                count = Some(c);
+            } else {
+                return None;
+            }
+        }
+        Some((part, count))
+    }
+
+    fn is_closer(&self, line: &str) -> bool {
+        line == self.close || self.closer_words(line).is_some()
     }
 
     fn is_opener(&self, line: &str) -> bool {
@@ -178,6 +203,8 @@ fn parse_opener(n: usize, line: &str) -> Option<Result<(usize, Kind, usize), Str
 
 struct Block {
     markers: Markers,
+    /// The opener line, for errors.
+    opener: String,
     part: Part,
     /// Line of the opener.
     start: usize,
@@ -208,8 +235,57 @@ impl Block {
             .collect()
     }
 
-    /// Error for a marker line that does not fit the current part.
-    fn unexpected(&self, n: usize, line: &str) -> String {
+    /// Whether the words after `NEW` on a closing line say what the opener says. Words
+    /// that say something else have two readings, so they are not taken as the closer.
+    fn fits(&self, (part, count): (bool, Option<usize>)) -> bool {
+        (!part || self.kind == Kind::ReplacePart) && count.is_none_or(|c| c == self.count)
+    }
+
+    /// Error for a closing line whose words after `NEW` say something the opener does not.
+    fn mismatched_closer(
+        &self,
+        n: usize,
+        line: &str,
+        (part, count): (bool, Option<usize>),
+    ) -> String {
+        let m = &self.markers;
+        let mut msg = format!(
+            "line {n}: the closing line `{line}` does not match the opener `{}` at line {}",
+            self.opener, self.start
+        );
+        let word = self.kind.first_part();
+        if part && !matches!(self.kind, Kind::Replace | Kind::ReplacePart) {
+            msg += &format!(
+                "\n  hint: `part` is only for `{} OLD part`; close the {word} block with `{}`",
+                m.open, m.close
+            );
+        } else if count.is_some() && self.kind == Kind::Range {
+            msg += &format!(
+                "\n  hint: FROM takes no count; close the block with `{}`",
+                m.close
+            );
+        } else {
+            // The opener decides what the block does: write the fixed opener out.
+            let part = if part || self.kind == Kind::ReplacePart {
+                " part"
+            } else {
+                ""
+            };
+            let count = match count.unwrap_or(self.count) {
+                1 => String::new(),
+                c => format!(" count={c}"),
+            };
+            msg += &format!(
+                "\n  hint: the opener decides what the block does: open it with `{} {word}{part}{count}` if that is meant, and close it with `{}`",
+                m.open, m.close
+            );
+        }
+        msg + &self.longer_hint()
+    }
+
+    /// Error for a marker line that does not fit the current part. `next` is the next
+    /// line that is not blank (`None`: the input ends).
+    fn unexpected(&self, n: usize, line: &str, next: Option<&str>) -> String {
         let m = &self.markers;
         let mut msg = format!(
             "line {n}: unexpected `{line}` inside the {} part that starts at line {}",
@@ -221,22 +297,45 @@ impl Block {
         );
         msg += &self.length_hints();
         let missing = match self.part {
-            Part::Old | Part::To if line == m.close => Some(m.sep.as_str()),
+            Part::Old | Part::To if m.is_closer(line) => Some(m.sep.as_str()),
             Part::Old | Part::To if m.is_opener(line) => Some(m.sep.as_str()),
+            // A second separator where the closing line goes: at the end of the input, or
+            // right before the closing line. Not accepted, since a NEW text may have a line
+            // of `=` (a Markdown heading's underline).
+            Part::New if line == m.sep && next.is_none() => {
+                msg += &format!(
+                    "\n  hint: a block ends with `{}`, not `{}`; write it in place of line {n}?",
+                    m.close, m.sep
+                );
+                None
+            }
+            Part::New if line == m.sep && next.is_some_and(|l| m.is_closer(l)) => {
+                msg += &format!(
+                    "\n  hint: the NEW part already started at line {}; remove the second `{}` at line {n}?",
+                    self.part_start, m.sep
+                );
+                None
+            }
             Part::New if m.is_opener(line) || line == m.sep => Some(m.close.as_str()),
             _ => None,
         };
         if let Some(missing) = missing {
             msg += &format!("\n  hint: missing `{missing}` before line {n}?");
         }
-        if self.odd.is_empty() {
-            let longer = Markers::new(m.open.len() + 2);
-            msg += &format!(
-                "\n  hint: if the text itself has this line, use longer markers (`{} OLD`, `{}`, `{}`) or JSON",
-                longer.open, longer.sep, longer.close
-            );
+        msg + &self.longer_hint()
+    }
+
+    /// For a marker line meant as text: longer markers make it plain content. Left out
+    /// when lines with markers of another length already explain the error.
+    fn longer_hint(&self) -> String {
+        if !self.odd.is_empty() {
+            return String::new();
         }
-        msg
+        let longer = Markers::new(self.markers.open.len() + 2);
+        format!(
+            "\n  hint: if the text itself has this line, use longer markers (`{} OLD`, `{}`, `{}`) or JSON",
+            longer.open, longer.sep, longer.close
+        )
     }
 }
 
@@ -295,6 +394,7 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                 };
                 block = Some(Block {
                     markers: Markers::new(len),
+                    opener: line.to_string(),
                     part,
                     start: n,
                     part_start: n,
@@ -351,7 +451,10 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                     m.to, m.sep, b.start, m.open, m.to, m.sep, m.close
                 ));
             }
-            Part::New if line == m.close => {
+            Part::New if m.is_closer(line) => {
+                if let Some(words) = m.closer_words(line).filter(|&w| !b.fits(w)) {
+                    return Err(b.mismatched_closer(n, line, words));
+                }
                 let mut b = block.take().expect("inside a block");
                 let part = b.kind == Kind::ReplacePart;
                 if part {
@@ -385,7 +488,14 @@ pub fn parse(text: &str, default_file: Option<&str>) -> Result<Vec<Edit>, String
                 blocks += 1;
                 block_since_file_line = true;
             }
-            _ if m.is_marker(line) => return Err(b.unexpected(n, line)),
+            _ if m.is_marker(line) => {
+                let next = text
+                    .lines()
+                    .skip(i + 1)
+                    .map(str::trim_end)
+                    .find(|l| !l.is_empty());
+                return Err(b.unexpected(n, line, next));
+            }
             part => {
                 if let Some(len) = marker_like_len(line).filter(|&len| len != m.open.len()) {
                     b.odd.push((n, line.to_string(), len));
@@ -477,7 +587,7 @@ fn marker_like_len(line: &str) -> Option<usize> {
                     .any(|w| rest.starts_with(w))
         }
         b'=' => rest.is_empty(),
-        _ => rest == " NEW",
+        _ => rest == " NEW" || rest.starts_with(" NEW "),
     };
     (shaped && len >= 3).then_some(len)
 }
