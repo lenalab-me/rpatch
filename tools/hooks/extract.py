@@ -1,25 +1,30 @@
 #!/usr/bin/env python3
 """Writes the Bash commands of recent Claude Code sessions as JSONL for tools/hooks/replay.py.
 
-usage: python3 tools/hooks/extract.py DAYS OUT.jsonl
+usage: python3 tools/hooks/extract.py DAYS OUT.jsonl [--exclude NAME]...
 
 One line per command: session, cwd, ts, command, the first 400 characters of the result.
 The output holds session contents, which can include credentials: write it outside the repo
-(e.g. /tmp), chmod 600, and delete it when done. prod-rpatch and pi-agent sessions are left out.
+(e.g. /tmp), chmod 600, and delete it when done. --exclude leaves out the projects whose names
+contain NAME (any number of times).
 """
+import argparse
 import glob
 import json
 import os
-import sys
 import time
 
 ROOT = os.path.expanduser('~/.claude/projects')
-EXCLUDE = ('prod-rpatch', 'pi-agent')
-days = float(sys.argv[1]); out = sys.argv[2]
+ap = argparse.ArgumentParser(usage=__doc__.splitlines()[2].removeprefix('usage: '))
+ap.add_argument('days', type=float)
+ap.add_argument('out')
+ap.add_argument('--exclude', action='append', default=[], metavar='NAME')
+a = ap.parse_args()
+days, out, exclude = a.days, a.out, a.exclude
 now = time.time(); n = 0
 with open(out, 'w') as w:
     for f in glob.glob(ROOT + '/*/*.jsonl') + glob.glob(ROOT + '/*/*/subagents/*.jsonl'):
-        if any(x in f for x in EXCLUDE) or now - os.path.getmtime(f) > days * 86400:
+        if any(x in os.path.relpath(f, ROOT).split(os.sep)[0] for x in exclude) or now - os.path.getmtime(f) > days * 86400:
             continue
         uses, results = [], {}
         with open(f, errors='replace') as fh:

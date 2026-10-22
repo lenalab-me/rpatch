@@ -11,7 +11,7 @@ REPLACE = re.compile(r'\.replace\(|\bre\.sub\(')
 WRITE = re.compile(r"""open\([^)]*['"]w['"]|write_text\(|\.write\(""")
 GUARD = re.compile(r'\bassert\b|\braise\b|\.count\(')
 PY_FAIL = re.compile(r'Traceback|AssertionError')
-# PreToolUse フック（~/.claude/hooks/no-python-replace.py）が止めた呼び出し。何も書いていない
+# PreToolUse フック（初代の no-python-replace.py と、いまの edit_guard.py）が止めた呼び出し。何も書いていない
 HOOK_BLOCKED = re.compile(r'Blocked by a hook')
 # edit_guard.py が理由の末尾に付ける規則の名前。付いていないのは初代のフック（python の置換だけ）
 HOOK_RULE = re.compile(r'\[edit-guard: ([\w-]+)\]')

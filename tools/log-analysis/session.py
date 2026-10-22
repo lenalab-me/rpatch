@@ -1,7 +1,8 @@
 """1 つのセッション（サブエージェントを含む）で、rpatch がどう使われたかを見る。
 
 使い方:
-  python3 tools/log-analysis/session.py              # 直近のセッション（prod-rpatch と pi-agent を除く）
+  python3 tools/log-analysis/session.py              # 直近のセッション
+  python3 tools/log-analysis/session.py --exclude rpatch  # 名前に rpatch を含むプロジェクトを除いた直近（何度でも）
   python3 tools/log-analysis/session.py network      # プロジェクト名かセッション ID の一部で選ぶ
   python3 tools/log-analysis/session.py --list       # 直近のセッションと rpatch の呼び出し数
   python3 tools/log-analysis/session.py network -v   # 失敗した呼び出しの入力と出力も出す
@@ -14,7 +15,6 @@ from datetime import datetime
 from metrics import HOOK_BLOCKED, PY, REPLACE, RPATCH_FAILED, SD, WRITE, rpatch_call
 
 ROOT = os.path.expanduser('~/.claude/projects')
-DEFAULT_EXCLUDE = ('prod-rpatch', 'pi-agent')
 HEREDOC_WRITE = re.compile(r'(^|[;&|(\n])\s*(cat|tee)\s+(-a\s+)?>{0,2}\s*\S+\s*<<|cat\s*>>?\s*\S+\s*<<')
 NODE = re.compile(r'(^|[;&|(\n])\s*node\s')
 # rpatch 自身のエラー行（連ねた cargo などの "error:" と区別するため、rpatch の書式に限る）
@@ -145,13 +145,13 @@ def failed(u):
     return bool(RPATCH_FAILED.search(u['res']) or RPATCH_ERROR.search(u['res']))
 
 
-def pick(query):
+def pick(query, exclude=()):
     for f in sessions():
         rel = os.path.relpath(f, ROOT)
         if query:
             if query in rel or os.path.abspath(query) == f:
                 return f
-        elif not any(x in rel for x in DEFAULT_EXCLUDE):
+        elif not any(x in rel for x in exclude):
             return f
     raise SystemExit(f'セッションが見つかりません: {query or "(直近)"}')
 
@@ -263,7 +263,7 @@ def failure(u, name, fix, via=None):
     }
 
 
-def recent(hours=None, limit=None, exclude=DEFAULT_EXCLUDE):
+def recent(hours=None, limit=None, exclude=()):
     """更新が新しい順のセッションの集計。"""
     now = datetime.now().timestamp()
     out = []
@@ -326,11 +326,13 @@ def main():
     ap.add_argument('query', nargs='?', help='プロジェクト名・セッション ID の一部、または .jsonl のパス')
     ap.add_argument('--list', nargs='?', const=10, type=int, metavar='N', help='直近 N 件のセッションを並べる')
     ap.add_argument('-v', '--verbose', action='store_true', help='失敗した呼び出しの入力と出力も出す')
+    ap.add_argument('--exclude', action='append', default=[], metavar='NAME',
+                    help='query がないとき、名前に NAME を含むプロジェクトを除く（何度でも）')
     a = ap.parse_args()
     if a.list:
         list_sessions(a.list)
     else:
-        report(pick(a.query), a.verbose)
+        report(pick(a.query, a.exclude), a.verbose)
 
 
 if __name__ == '__main__':

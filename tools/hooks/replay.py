@@ -10,7 +10,7 @@ the command ran (a file the command was creating is new, as it was then); "in in
 is in git's index today, an upper bound for files that were added but not yet committed then.
 A file deleted since then counts in neither. The slowest command shows how long the hook takes.
 --old compares the python-replace rule with an earlier hook that has python_code, REPLACE and
-WRITE (default: ~/.claude/hooks/no-python-replace.py when it exists).
+WRITE (no default: without it, that comparison is left out).
 """
 import argparse
 import collections
@@ -65,11 +65,11 @@ def main():
     p.add_argument("corpus")
     p.add_argument("--samples", type=int, default=5)
     p.add_argument("--rule")
-    p.add_argument("--old", default=os.path.expanduser("~/.claude/hooks/no-python-replace.py"))
+    p.add_argument("--old")
     a = p.parse_args()
 
     guard = load(os.path.join(HERE, "..", "..", "plugin", "hooks", "edit_guard.py"), "edit_guard")
-    old = load(a.old, "old_hook") if a.old and os.path.exists(a.old) else None
+    old = load(a.old, "old_hook") if a.old else None
     files, index = as_of(guard), guard.Files()
     counts, in_index, samples = collections.Counter(), collections.Counter(), collections.defaultdict(list)
     agree = collections.Counter()

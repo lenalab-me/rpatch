@@ -8,7 +8,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlparse
 
-from session import COLUMNS, DEFAULT_EXCLUDE, ROOT, analyze, recent
+from session import COLUMNS, ROOT, analyze, recent
 
 REFRESH_SECS = 600
 HOME = os.path.expanduser('~').replace('/', '-') + '-'
@@ -117,8 +117,8 @@ def blocked_html(blocked):
             '<th>そのあと何で書いたか</th></tr>' + rows + '</table></div>')
 
 
-def overview(hours, show_all):
-    sessions = recent(hours=hours, exclude=() if show_all else DEFAULT_EXCLUDE)
+def overview(hours, show_all, exclude=()):
+    sessions = recent(hours=hours, exclude=() if show_all else exclude)
     edits = lambda s: s['total']['rpatch'] + s['total']['py置換'] + s['total']['Edit'] + s['total']['sd']
     # ファイルの更新時刻は再開などでも変わるので、最後の呼び出しの時刻で絞って並べる
     since = datetime.now().astimezone().timestamp() - hours * 3600
@@ -129,9 +129,10 @@ def overview(hours, show_all):
     rate = f'{total["失敗"] / total["rpatch"]:.0%}' if total['rpatch'] else '–'
     choose = ''.join(f'<option value="{h}"{" selected" if h == hours else ""}>{label}</option>'
                      for h, label in [(3, '3 時間'), (24, '24 時間'), (72, '3 日'), (168, '7 日')])
+    include = (f'<label><input type="checkbox" name="all" value="1"{" checked" if show_all else ""} '
+               f'onchange="this.form.submit()">\n{e("・".join(exclude))} も含める</label>') if exclude else ''
     body = f"""<p><form>期間 <select name="hours" onchange="this.form.submit()">{choose}</select>
-<label><input type="checkbox" name="all" value="1"{" checked" if show_all else ""} onchange="this.form.submit()">
-prod-rpatch・pi-agent も含める</label></form>
+{include}</form>
 <span class="muted">編集のあったセッション {len(active)} 件（全 {len(sessions)} 件）</span></p>
 <div class="tiles">
 <div class="tile"><span class="muted">rpatch の編集</span><b>{total['rpatch']}</b></div>
@@ -194,6 +195,7 @@ def parse_hours(q, default):
 class Handler(BaseHTTPRequestHandler):
     hours = 24
     port = 8765
+    exclude = ()
 
     def do_GET(self):
         # DNS rebinding で別のサイトからセッションの中身を読まれないよう、Host を確かめる
@@ -205,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(url.query)
         if url.path == '/':
             hours = parse_hours(q, self.hours)
-            out = overview(hours, q.get('all') == ['1'])
+            out = overview(hours, q.get('all') == ['1'], self.exclude)
         elif url.path == '/s':
             out = detail(q.get('path', [''])[0])
         else:
@@ -228,8 +230,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--port', type=int, default=8765)
     ap.add_argument('--hours', type=int, default=24, help='一覧に出す期間の既定値')
+    ap.add_argument('--exclude', action='append', default=[], metavar='NAME',
+                    help='名前に NAME を含むプロジェクトを一覧から除く（何度でも。画面で含め直せる）')
     a = ap.parse_args()
     Handler.hours = a.hours
+    Handler.exclude = tuple(a.exclude)
     Handler.port = a.port
     server = ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
     print(f'http://127.0.0.1:{a.port}/', flush=True)
