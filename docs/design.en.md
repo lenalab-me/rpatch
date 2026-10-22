@@ -31,7 +31,7 @@ Usage: `rpatch --help`. The MCP server: [mcp.md](mcp.md) (Japanese). Japanese ve
    - If the failed edit would have matched the file as it was before the earlier edits in the batch, that is reported too (an earlier edit changed the text, a common slip).
 4. **Write** (`write.rs`)
    - If any edit did not match, nothing is written. `--dry-run` writes nothing either.
-   - First, the files to be written are checked for read-only ones (a rename would replace a read-only file anyway). `--dry-run` checks this too, so it does not report success where the real run fails.
+   - First, the files to be written are checked for read-only ones (a rename would replace a read-only file anyway). `--dry-run` checks this too, so it does not report success for a read-only file where the real run fails. It does not try writing to the directory, so a directory the user cannot write to passes a dry run and fails the real run (with the files already written restored, as below).
    - Likewise, each file is checked to be unchanged since it was read (byte for byte, BOM included); if one changed, nothing is written (exit status 3), so that a change by another agent, a formatter or an editor on the same tree is not silently dropped. Each file is checked again right before its rename, to keep the window small.
    - Each file is written to a temporary file in the same directory (`.rpatch-*`), synced with `fsync`, given the original permissions, and renamed over the original. A file that had a BOM gets it back.
    - If writing a file fails, the files already written are restored to their original content. If restoring also fails, the files left modified are reported.
@@ -40,7 +40,7 @@ Usage: `rpatch --help`. The MCP server: [mcp.md](mcp.md) (Japanese). Japanese ve
    - A file whose edits cancel out, so that its content equals the original, shows `= <file>  edits=<n>  unchanged` and is not written (`M` and at_lines would claim a change that is not there).
    - With `--diff`, a unified diff follows, with headers `a/<file>` and `b/<file>`. Absolute paths are shown as they are.
 
-Because files are replaced by rename, hard links are broken (other links keep the old content); rpatch warns when that happens. A file restored after a failed write is restored by rename as well, so its hard links break too. Only the permission bits carry over, not extended attributes or ACLs. Changes after reading are caught as above, but a change in the tiny window between that check and the rename, and rollback after the process is killed midway, are out of scope (no lock is taken).
+Because files are replaced by rename, hard links are broken (other links keep the old content); rpatch warns when that happens. A file restored after a failed write is restored by rename as well, so its hard links break too. Only the permission bits carry over, not the owner (the new file belongs to the user who ran rpatch), extended attributes or ACLs. Changes after reading are caught as above, but a change in the tiny window between that check and the rename, and rollback after the process is killed midway, are out of scope (no lock is taken).
 
 ## Modules
 

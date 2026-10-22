@@ -67,8 +67,8 @@ Rules:
     Overlapping matches (such as repeated identical lines) count, and are an error.
   - Edits to the same file apply in order; each one sees the result of the previous.
   - Each file is replaced via temp file + rename, which breaks hard links to it
-    (rpatch warns) and keeps only the permission bits (not extended attributes or
-    ACLs). A UTF-8 BOM is kept and takes no part in matching.
+    (rpatch warns) and keeps only the permission bits (not the owner, extended
+    attributes or ACLs). A UTF-8 BOM is kept and takes no part in matching.
   - A file that changed on disk after rpatch read it is not overwritten: nothing
     is written, exit status 3; read it again and rerun.
 

@@ -2418,12 +2418,12 @@ fn failed_write_restores_files_already_written() {
     let dir = setup(&[("a.txt", "a\n"), ("locked/b.txt", "b\n")]);
     let locked = dir.path().join("locked");
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
-    let assert = rpatch_raw(
-        dir.path(),
-        &[],
-        "=== a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n=== locked/b.txt\n<<<<<<< OLD\nb\n=======\nB\n>>>>>>> NEW\n",
-    );
+    let input = "=== a.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n=== locked/b.txt\n<<<<<<< OLD\nb\n=======\nB\n>>>>>>> NEW\n";
+    // A dry run does not try writing to the directory, so it passes (as the design says).
+    let dry = rpatch_raw(dir.path(), &["-n"], input);
+    let assert = rpatch_raw(dir.path(), &[], input);
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    dry.success();
     assert
         .code(3)
         .stderr(predicate::str::contains("locked/b.txt: write failed"))
