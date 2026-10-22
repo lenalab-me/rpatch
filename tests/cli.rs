@@ -2589,6 +2589,21 @@ fn home_in_a_file_line_is_expanded() {
     assert_eq!(read(&home, ".config/app.txt"), "A\n");
 }
 
+/// Windows には HOME が無いことが多いので、そのときは USERPROFILE をホームとして読む。
+#[test]
+fn home_falls_back_to_userprofile() {
+    let home = setup(&[("app.txt", "a\n")]);
+    let work = setup(&[]);
+    assert_cmd::cargo_bin_cmd!("rpatch")
+        .current_dir(work.path())
+        .env_remove("HOME")
+        .env("USERPROFILE", home.path())
+        .write_stdin("=== ~/app.txt\n<<<<<<< OLD\na\n=======\nA\n>>>>>>> NEW\n")
+        .assert()
+        .success();
+    assert_eq!(read(&home, "app.txt"), "A\n");
+}
+
 /// 開始行にブロックの本文やファイル名を書いた誤りには、本文は次の行から書くと案内する。
 /// `OLD count=3 part` の並びの誤りには、`part` を先に書くと案内する。
 #[test]

@@ -50,7 +50,8 @@ Blocks:
   The closing line may repeat the opener's `part` and `count=N` (`>>>>>>> NEW part`);
   other words after NEW are refused.
   Several `=== <file>` lines in a row share the blocks after them: each block is
-  applied to every one of the files, all or nothing. `~/` in a file name is $HOME.
+  applied to every one of the files, all or nothing. `~/` in a file name is $HOME (or
+  %USERPROFILE% where there is no HOME, as on Windows).
   FROM/TO: to delete an end marker line too, use the line after it as TO.
   BEFORE/AFTER: no line is rewritten. Several AFTER blocks on one anchor stack up in
   reverse (each goes right below the anchor), so put the lines in one NEW instead.

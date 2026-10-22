@@ -294,9 +294,11 @@ fn load_files(
     (files, file_of)
 }
 
-/// `~/path` as written in a file line or in JSON, where no shell expands it.
+/// `~/path` as written in a file line or in JSON, where no shell expands it. Windows
+/// often has no HOME, but has USERPROFILE.
 fn expand_home(file: &str) -> PathBuf {
-    match (file.strip_prefix("~/"), std::env::var_os("HOME")) {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    match (file.strip_prefix("~/"), home) {
         (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
         _ => PathBuf::from(file),
     }
