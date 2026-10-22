@@ -144,4 +144,4 @@ When 1 and 3 both happen, the status is 3. Failing to print the result after the
 - Unit tests in the modules (line numbers, listing matches including overlapping ones, and so on).
 - `tests/mcp.rs`: the MCP server's handshake, and that it returns the same output as the CLI (only with `--features mcp`).
 
-`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` must pass both without features and with `--features mcp`. CI (`.github/workflows/build.yml`) runs on manual dispatch only.
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` must pass both without features and with `--features mcp`. CI (`.github/workflows/build.yml`) runs on manual dispatch only. Besides stable, it tests on the Rust that `rust-version` names (1.88).

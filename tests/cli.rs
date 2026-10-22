@@ -2255,6 +2255,25 @@ fn llms_txt_states_the_exit_status_as_the_help_does() {
     assert_eq!(words(&format!("Exit status:{llms}")), words(&help));
 }
 
+/// CI は Cargo.toml の rust-version の Rust でもテストする。版を上げたら両方を変える。
+#[test]
+fn ci_tests_the_rust_version_cargo_toml_promises() {
+    let version = include_str!("../Cargo.toml")
+        .lines()
+        .find_map(|l| l.strip_prefix("rust-version = \""))
+        .and_then(|v| v.strip_suffix('"'))
+        .expect("Cargo.toml has rust-version");
+    let ci = include_str!("../.github/workflows/build.yml");
+    assert!(
+        ci.contains(&format!("dtolnay/rust-toolchain@{version}\n")),
+        "build.yml has no job on Rust {version}"
+    );
+    assert!(
+        include_str!("../README.md").contains(&format!("Rust {version} 以上")),
+        "README does not say Rust {version}"
+    );
+}
+
 /// README の最初の例は、そのとおりに作ったファイルに当たる（前はファイルが無く file not found）。
 #[test]
 fn the_readme_example_applies_to_the_file_it_makes() {

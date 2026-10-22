@@ -28,7 +28,7 @@ cargo build --locked --release --features mcp
 
 ソースからPATHに入れる場合は、どちらも `cargo install --locked --path . --features mcp`。接続設定のcommandには、PATHへの依存を避けるため実行ファイルの絶対パスを使う。
 
-[Build and test](../.github/workflows/build.yml)はApple Silicon、Intel Mac、Windows x64のホストで、featureなし・ありの両方のclippyとテストを実行する。releaseビルドは `--features mcp` 付きで、バイナリをActionsのartifactとして保存する。署名・notarizationやGitHub Releaseへの公開は含まない。
+[Build and test](../.github/workflows/build.yml)はApple Silicon、Intel Mac、Windows x64のホストで、featureなし・ありの両方のclippyとテストを実行する。Apple Siliconでは、`Cargo.toml` の `rust-version`（1.88）のRustでもテストする。releaseビルドは `--features mcp` 付きで、バイナリをActionsのartifactとして保存する。署名・notarizationやGitHub Releaseへの公開は含まない。
 
 ## Codexから接続
 

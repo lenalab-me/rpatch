@@ -144,4 +144,4 @@ rename で置き換えるので、ハードリンクは切れる（ほかのリ�
 - 各モジュールの単体テスト（行番号の計算、重なりを含む一致の列挙など）。
 - `tests/mcp.rs`: MCP サーバーの接続と、CLI と同じ出力になること（`--features mcp` のときだけ）。
 
-`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` を、feature なしと `--features mcp` の両方で通す。CI（`.github/workflows/build.yml`）は手動で起動する。
+`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` を、feature なしと `--features mcp` の両方で通す。CI（`.github/workflows/build.yml`）は手動で起動する。stable のほかに、`rust-version` の Rust（1.88）でもテストする。

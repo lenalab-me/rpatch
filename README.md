@@ -22,7 +22,7 @@ EOF_INPUT
 
 `--dry-run` で確認だけできる。行の一部の置換（`OLD part`）、FROM/TOの範囲置換、BEFORE/AFTERの行挿入、JSONの入力にも対応。入力形式は `rpatch --help`（40行以内の要約）、詳細は `rpatch --help blocks|json|rules|output`、全文は `rpatch --help all`。
 
-入れ方は `cargo install --locked --path .`。MCPサーバーはCargo feature `mcp`（既定ではオフ）に入っていて、使うときだけ `--features mcp` を付ける。
+入れ方は `cargo install --locked --path .`（Rust 1.88 以上。`Cargo.toml` の `rust-version`）。MCPサーバーはCargo feature `mcp`（既定ではオフ）に入っていて、使うときだけ `--features mcp` を付ける。
 
 - [設計](docs/design.md)（[English](docs/design.en.md)）: 処理の流れ、照合の規則、診断、書き込み、終了コード
 - [llms.txt](llms.txt): LLM 向けの入口（英語）

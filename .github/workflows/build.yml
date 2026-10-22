@@ -38,3 +38,11 @@ jobs:
           name: rpatch-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary }}
           if-no-files-found: error
+  # The oldest Rust that `rust-version` in Cargo.toml promises (a test keeps the two equal).
+  msrv:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - run: cargo test --locked
+      - run: cargo test --locked --features mcp
