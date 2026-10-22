@@ -1441,6 +1441,22 @@ fn overlapping_matches_are_ambiguous_block() {
     assert_eq!(read(&dir, "ov.txt"), "x\nx\nx\n");
 }
 
+/// 最後の行に改行がなくても、その行と重なる一致を数える。前は黙って 1 つ目に当たっていた。
+#[test]
+fn overlap_with_a_last_line_without_newline_is_ambiguous() {
+    let dir = setup(&[("ov.txt", "x\nx\nx")]);
+    rpatch_raw(
+        dir.path(),
+        &[],
+        "=== ov.txt\n<<<<<<< OLD\nx\nx\n=======\ny\n>>>>>>> NEW\n",
+    )
+    .code(1)
+    .stderr(predicate::str::contains(
+        "2 matches found, but they overlap (lines 1-2 and 2-3)",
+    ));
+    assert_eq!(read(&dir, "ov.txt"), "x\nx\nx");
+}
+
 /// #15: count が一致数と同じでも「expected 2, found 2」とは言わない。重なりを見出しにする。
 #[test]
 fn overlap_with_matching_count_names_the_overlap() {

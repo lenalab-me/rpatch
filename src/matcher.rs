@@ -40,7 +40,7 @@ pub fn find(content: &str, edit: &Edit) -> Result<Vec<Span>, Mismatch> {
                 })
                 .collect();
             if whole_lines {
-                spans.extend(last_line_match(content, &old, &new, nl, spans.last()));
+                spans.extend(last_line_match(content, &old, &new, nl));
             }
             let positions: Vec<usize> = spans.iter().map(|s| s.start).collect();
             let overlap = spans.windows(2).any(|w| w[1].start < w[0].end);
@@ -306,14 +306,9 @@ fn occurrences(content: &str, needle: &str, line_start: bool) -> Vec<usize> {
 }
 
 /// Block texts end with a line break, so they cannot match a last line that has none.
-/// Match that line without the break, and keep the file without a final break.
-fn last_line_match(
-    content: &str,
-    old: &str,
-    new: &str,
-    nl: &str,
-    previous: Option<&Span>,
-) -> Option<Span> {
+/// Match that line without the break, and keep the file without a final break. A match
+/// that overlaps the one before it is still returned: overlapping matches are an error.
+fn last_line_match(content: &str, old: &str, new: &str, nl: &str) -> Option<Span> {
     if content.ends_with('\n') {
         return None;
     }
@@ -322,7 +317,7 @@ fn last_line_match(
         return None;
     }
     let p = content.len() - old.len();
-    if !at_line_start(content, p) || previous.is_some_and(|s| s.end > p) {
+    if !at_line_start(content, p) {
         return None;
     }
     Some(Span {
