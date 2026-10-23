@@ -2815,8 +2815,9 @@ fn probe_does_not_run_the_command_when_an_edit_does_not_match() {
         &["--probe", "touch", "ran"],
         &break_x("f.txt").replace("x = 1", "x = 9"),
     )
-    .code(1)
-    .stderr(predicate::str::contains("nothing written"));
+    .code(2)
+    .stderr(predicate::str::contains("nothing written"))
+    .stderr(predicate::str::contains("the command was not run"));
     assert!(!dir.path().join("ran").exists(), "the command ran");
     assert_probed_unchanged(&dir);
 }

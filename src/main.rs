@@ -58,6 +58,11 @@ fn run() -> Result<(), u8> {
             Ok((out, backups)) => probe::run(&out, backups, &cmd),
             Err(err) => {
                 eprint!("{}", err.message);
+                // 1 is "not caught" in a probe; an edit that did not match broke nothing.
+                if err.code == 1 {
+                    eprintln!("rpatch: --probe broke nothing, so the command was not run");
+                    return Err(2);
+                }
                 Err(err.code)
             }
         };

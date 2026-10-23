@@ -87,20 +87,22 @@ Output details:
 Probe:
   rpatch [--diff] --probe [--] CMD [ARGS...] <<'EOF' ... EOF
   Checks that a test notices a break. It applies the edits (same input, same matching;
-  if one does not match, nothing is written and the exit status is the usual 1, 2 or
-  3), runs CMD with its stdout and stderr passed through, and then, whatever happened,
-  puts every written file back and compares it byte for byte with what it held. The
-  last line says whether the break was caught. Everything after `--probe` is CMD, so
-  options go before it (`rpatch --diff --probe cargo test`); a lone `--` right after
-  `--probe` is only a divider. CMD has no stdin and runs in the current directory.
+  if one does not match, nothing is written and CMD is not run), runs CMD with its
+  stdout and stderr passed through, and then, whatever happened, puts every written
+  file back and compares it byte for byte with what it held. The last line says
+  whether the break was caught. Everything after `--probe` is CMD, so options go
+  before it (`rpatch --diff --probe cargo test`); a lone `--` right after `--probe` is
+  only a divider. CMD has no stdin and runs in the current directory.
   Exit status: 0 CMD failed with the edits applied (caught), 1 CMD passed (NOT
   caught: the break is not covered by what CMD checks), 2 no CMD, --probe with
-  --dry-run (nothing would be broken), or edits that change no file, 3 CMD could not
-  be run (the files are restored; a typo must not read as "caught"), a signal
-  (SIGINT, SIGTERM, SIGHUP) stopped CMD and the probe has no result, or a file could
-  not be restored (RESTORE FAILED names it; it is left broken, fix it by hand).
-  Edits and matching failures keep their codes. SIGKILL cannot be caught, and then
+  --dry-run (nothing would be broken), edits that change no file, or an edit that did
+  not match or a missing file (nothing was broken; 1 means only "not caught"), 3 CMD
+  could not be run (the files are restored; a typo must not read as "caught"), a
+  signal (SIGINT, SIGTERM, SIGHUP) stopped CMD and the probe has no result, or a file
+  could not be restored (RESTORE FAILED names it; it is left broken, fix it by hand).
+  Invalid input and I/O errors keep their codes. SIGKILL cannot be caught, and then
   the files stay broken. With several files, all are broken together and restored
   together. A file that CMD itself changed is also put back. --diff prints the break
   before CMD runs. To cut a long output, pipe all of rpatch's output:
-  `rpatch --probe CMD <<'EOF' 2>&1 | tail -30` (the last line stays the verdict).
+  `rpatch --probe CMD <<'EOF' 2>&1 | tail -30` (the last line stays the verdict; the
+  exit status is tail's unless `set -o pipefail`).
