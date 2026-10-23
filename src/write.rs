@@ -77,6 +77,42 @@ pub fn commit(files: &[Pending]) -> Result<(), String> {
     Ok(())
 }
 
+/// What a file held before an edit wrote it, to put back: `--probe` breaks files on purpose
+/// and must leave them as they were.
+pub struct Backup {
+    pub display: String,
+    path: std::path::PathBuf,
+    prefix: String,
+    original: String,
+    perms: Permissions,
+}
+
+impl Backup {
+    pub fn of(f: &Pending) -> Backup {
+        Backup {
+            display: f.display.to_string(),
+            path: f.path.to_path_buf(),
+            prefix: f.prefix.to_string(),
+            original: f.original.to_string(),
+            perms: f.perms.clone(),
+        }
+    }
+
+    /// Writes the old bytes back, then reads the file again and compares it with them.
+    pub fn restore(&self) -> Result<(), String> {
+        write_atomic(&self.path, &self.prefix, &self.original, &self.perms)
+            .map_err(|e| format!("write failed: {e}"))?;
+        let now = fs::read(&self.path).map_err(|e| format!("cannot read it back: {e}"))?;
+        let mut want = self.prefix.clone().into_bytes();
+        want.extend_from_slice(self.original.as_bytes());
+        if now == want {
+            Ok(())
+        } else {
+            Err("it differs from the old bytes after the restore".to_string())
+        }
+    }
+}
+
 /// Writes to a temporary file next to `path`, then renames it over `path`.
 fn write_atomic(path: &Path, prefix: &str, content: &str, perms: &Permissions) -> io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));

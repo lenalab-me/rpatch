@@ -15,6 +15,7 @@ const TOPICS: &[(&str, &str)] = &[
     ("json", "JSON"),
     ("rules", "Rules:"),
     ("output", "Output details:"),
+    ("probe", "Probe:"),
 ];
 
 fn names() -> String {

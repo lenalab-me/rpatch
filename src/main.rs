@@ -1,6 +1,7 @@
 mod help;
 #[cfg(feature = "mcp")]
 mod mcp;
+mod probe;
 
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -8,7 +9,7 @@ use std::process::ExitCode;
 
 use rpatch::PatchOptions;
 
-const SHORT_USAGE: &str = "usage: rpatch [--diff] [--dry-run] [FILE] <<'EOF' ... EOF   (see `rpatch --help` for the input format)";
+const SHORT_USAGE: &str = "usage: rpatch [--diff] [--dry-run] [FILE] [--probe CMD...] <<'EOF' ... EOF   (see `rpatch --help` for the input format)";
 #[cfg(feature = "mcp")]
 const MCP_USAGE: &str = "usage: rpatch mcp [--cwd <directory>]\nRuns a local MCP server over stdin/stdout. Relative edit paths use --cwd (default: current directory).";
 
@@ -35,7 +36,7 @@ fn run() -> Result<(), u8> {
     if args.first().is_some_and(|arg| arg == "mcp") {
         return run_mcp(&args[1..]);
     }
-    let Some(opts) = parse_args(&args)? else {
+    let Some((opts, probe_cmd)) = parse_args(&args)? else {
         return Ok(());
     };
     let mut stdin = io::stdin();
@@ -50,6 +51,17 @@ fn run() -> Result<(), u8> {
     })?;
     // A deleted cwd must not hide input errors; relative paths then fail on their own.
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if let Some(cmd) = probe_cmd {
+        // Before the first write: a signal that comes later still ends in a restore.
+        probe::catch_signals()?;
+        return match rpatch::apply_with_backups(&text, opts, &cwd) {
+            Ok((out, backups)) => probe::run(&out, backups, &cmd),
+            Err(err) => {
+                eprint!("{}", err.message);
+                Err(err.code)
+            }
+        };
+    }
     match rpatch::apply(&text, opts, &cwd) {
         Ok(out) => print_out(&out).map_err(|err| {
             eprintln!("rpatch: the edits were written, but printing the result failed: {err}");
@@ -74,7 +86,25 @@ fn print_out(text: &str) -> io::Result<()> {
     }
 }
 
-fn parse_args(args: &[String]) -> Result<Option<PatchOptions>, u8> {
+/// The options, and the command after `--probe` if there is one.
+type Parsed = (PatchOptions, Option<Vec<String>>);
+
+fn parse_args(args: &[String]) -> Result<Option<Parsed>, u8> {
+    // `--probe` takes everything after it as the command, so the command's own `--help` or
+    // `--diff` are the command's. A `--probe` after `--` is a file name.
+    let end = args
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(args.len());
+    let (args, probe) = match args[..end].iter().position(|arg| arg == "--probe") {
+        Some(k) => {
+            let cmd = &args[k + 1..];
+            // `--probe -- CMD`: the `--` is only a divider, as in `git commit --`.
+            let cmd = cmd.strip_prefix(&["--".to_string()]).unwrap_or(cmd);
+            (&args[..k], Some(cmd.to_vec()))
+        }
+        None => (args, None),
+    };
     // `--` ends the options, so a file name may start with `-`.
     let options = match args.iter().position(|arg| arg == "--") {
         Some(k) => &args[..k],
@@ -128,7 +158,19 @@ fn parse_args(args: &[String]) -> Result<Option<PatchOptions>, u8> {
             }
         }
     }
-    Ok(Some(opts))
+    if let Some(cmd) = &probe {
+        if cmd.is_empty() {
+            eprintln!("rpatch: --probe needs a command after it\n{SHORT_USAGE}");
+            return Err(2);
+        }
+        if opts.dry_run {
+            eprintln!(
+                "rpatch: --probe cannot be combined with --dry-run: a dry run breaks nothing, so the command would run on the code as it is\n{SHORT_USAGE}"
+            );
+            return Err(2);
+        }
+    }
+    Ok(Some((opts, probe)))
 }
 
 #[cfg(not(feature = "mcp"))]

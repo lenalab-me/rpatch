@@ -109,9 +109,48 @@ impl Report {
     }
 }
 
+/// What the files held before `apply_with_backups` wrote them.
+pub struct Backups(Vec<write::Backup>);
+
+impl Backups {
+    /// No file was written (the edits cancel out, or it was a dry run).
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Puts every written file back as it was and checks the bytes. Tries all of them; the
+    /// error lists each file that could not be restored, with the reason.
+    pub fn restore(&self) -> Result<(), Vec<String>> {
+        let failed: Vec<String> = self
+            .0
+            .iter()
+            .filter_map(|b| b.restore().err().map(|why| format!("{}: {why}", b.display)))
+            .collect();
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(failed)
+        }
+    }
+
+    /// The files written, as the input named them.
+    pub fn files(&self) -> Vec<&str> {
+        self.0.iter().map(|b| b.display.as_str()).collect()
+    }
+}
+
 /// Applies the same input and options as the CLI, resolving paths against `cwd`.
 /// Returns CLI output as text; it never writes to stdout or stderr.
 pub fn apply(text: &str, opts: PatchOptions, cwd: &Path) -> Result<String, PatchError> {
+    apply_with_backups(text, opts, cwd).map(|(out, _)| out)
+}
+
+/// `apply`, and with it what the written files held before, so that the caller can put it back.
+pub fn apply_with_backups(
+    text: &str,
+    opts: PatchOptions,
+    cwd: &Path,
+) -> Result<(String, Backups), PatchError> {
     let edits = input::parse(text, opts.file.as_deref()).map_err(|message| PatchError {
         code: EXIT_INPUT,
         message: format!("rpatch: {message}\nrpatch: nothing written\n"),
@@ -140,6 +179,11 @@ pub fn apply(text: &str, opts: PatchOptions, cwd: &Path) -> Result<String, Patch
             perms: &f.perms,
         })
         .collect();
+    let backups = Backups(if opts.dry_run {
+        Vec::new()
+    } else {
+        pending.iter().map(write::Backup::of).collect()
+    });
     let written = if opts.dry_run {
         write::check(&pending)
     } else {
@@ -193,7 +237,7 @@ pub fn apply(text: &str, opts: PatchOptions, cwd: &Path) -> Result<String, Patch
     if opts.dry_run {
         out.push_str("(dry run: nothing written)\n");
     }
-    Ok(out)
+    Ok((out, backups))
 }
 
 struct LoadFailure {

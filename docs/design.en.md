@@ -53,6 +53,7 @@ Because files are replaced by rename, hard links are broken (other links keep th
 | `matcher.rs` | Finding where one edit applies in a file; the entry point for mismatch diagnostics |
 | `diagnose.rs` | Explanations when text is not found or the count is wrong (similar lines and so on) |
 | `write.rs` | All-or-nothing writing, and rollback on failure |
+| `probe.rs` | `--probe`: runs a command between the edits and putting every file back |
 | `text.rs` | Line numbers, and how lines are shown in diagnostics |
 | `mcp.rs` | The MCP server (only with the Cargo feature `mcp`) |
 | `help.txt` | The text of `--help`: the summary (through the exit status paragraph), then the sections |
@@ -132,6 +133,20 @@ For each file, the byte ranges changed by the edits (`changes`) are kept, and re
 
 When 1 and 3 both happen, the status is 3. Failing to print the result after the files were written is 3 too (a reader that stopped early, as in `| head`, is not a failure).
 
+With `--probe` the codes mean something else after the edits: 0 CMD failed (caught), 1 CMD passed (not caught), 3 CMD could not be run, a signal stopped the probe, or a file could not be restored. See `--probe` above.
+
+## `--probe`
+
+`rpatch --probe [--] CMD ARGS... <<'EOF' ... EOF` answers "does a check fail when this code is broken?" without the caller saving and restoring the files by hand (which, forgotten, leaves the code broken).
+
+1. The edits are applied as usual (`apply_with_backups`, which also returns what every written file held). If an edit does not match, nothing is written and the exit status is the usual one. Signal handlers are installed before the first write.
+2. CMD runs with its stdout and stderr passed through (the text of the failure is what the caller reports), no stdin, in the current directory. rpatch's own `M` lines and, with `--diff`, the diff come before it.
+3. Whatever happened (CMD passed, failed, could not start, a signal), every written file is put back with the same rename-based write as the rollback, then read again and compared byte for byte with the backup. A file that cannot be restored is reported as `RESTORE FAILED` and the status is 3. A panic restores too (a drop guard). SIGKILL cannot be caught; the files stay broken.
+4. The verdict is the last line: 0 when CMD failed (the break is caught), 1 when CMD passed (not caught).
+
+Decisions: everything after `--probe` is CMD (so CMD's own `--help` or `--diff` are its own); options go before it. `--probe` with `--dry-run` is invalid (2): nothing would be broken, and the result would read "not caught". Edits that change no file are invalid too (2) and CMD is not run. A CMD that cannot be started, and a signal that stops it, are 3 and not "caught": a typo in CMD must never read as success. A signal makes CMD be killed, the files restored, and the status 3. Several files are broken together and restored together. The restore also overwrites what CMD itself did to those files. Hard links to a file are broken by the restore as by any rename.
+
+## Out of scope
 ## Out of scope
 
 - Creating and deleting files (`cat > file <<'EOF'` and `rm` do that).

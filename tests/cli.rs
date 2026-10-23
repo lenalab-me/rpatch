@@ -2697,3 +2697,268 @@ fn text_on_the_opener_line_gets_a_hint() {
     .stderr(predicate::str::contains("write `part` before `count=N`"));
     assert_eq!(read(&dir, "a.txt"), "x\n");
 }
+
+// --- --probe: わざと壊して検査が落ちることを確かめ、必ず元に戻す ---------------
+
+/// `x = 1` を `x = 2` に壊す編集（ファイル名を足して使う）。
+fn break_x(file: &str) -> String {
+    format!("=== {file}\n<<<<<<< OLD\nx = 1\n=======\nx = 2\n>>>>>>> NEW\n")
+}
+
+/// BOM と CRLF のあるファイルでも、戻したあとはバイト単位で同じ。
+const PROBED: &[u8] = b"\xEF\xBB\xBFx = 1\r\nkeep\r\n";
+
+/// `PROBED` の `x = 1` を壊す編集（改行は CRLF）。
+#[cfg(unix)]
+fn break_probed() -> String {
+    break_x("f.txt")
+        .replace("x = 1\n", "x = 1\r\n")
+        .replace("x = 2\n", "x = 2\r\n")
+}
+
+fn probe_dir() -> TempDir {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("f.txt"), PROBED).unwrap();
+    dir
+}
+
+fn assert_probed_unchanged(dir: &TempDir) {
+    assert_eq!(
+        fs::read(dir.path().join("f.txt")).unwrap(),
+        PROBED,
+        "--probe left the file different from before"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_exits_0_when_the_command_fails_on_the_break_and_restores_the_file() {
+    let dir = probe_dir();
+    rpatch_raw(
+        dir.path(),
+        &[
+            "--probe",
+            "sh",
+            "-c",
+            "echo said-this; echo and-this >&2; grep -q 'x = 1' f.txt",
+        ],
+        &break_probed(),
+    )
+    .code(0)
+    .stdout(predicate::str::contains("M f.txt  edits=1"))
+    .stdout(predicate::str::contains("said-this"))
+    .stdout(predicate::str::contains("probe: restored f.txt"))
+    .stdout(predicate::str::contains("probe: caught:"))
+    .stdout(predicate::str::contains("failed (exit 1)"))
+    .stderr(predicate::str::contains("and-this"));
+    assert_probed_unchanged(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_exits_1_when_the_command_passes_on_the_break_and_restores_the_file() {
+    let dir = probe_dir();
+    // The command sees the broken file, so `grep x = 2` passes: the check is not catching it.
+    rpatch_raw(
+        dir.path(),
+        &["--probe", "sh", "-c", "grep -q 'x = 2' f.txt"],
+        &break_probed(),
+    )
+    .code(1)
+    .stdout(predicate::str::contains("M f.txt"))
+    .stderr(predicate::str::contains("probe: restored f.txt"))
+    .stderr(predicate::str::contains("probe: NOT CAUGHT:"));
+    assert_probed_unchanged(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_breaks_and_restores_several_files_together() {
+    let dir = setup(&[("a.txt", "x = 1\n"), ("sub/b.txt", "x = 1\n")]);
+    let input = format!("{}{}", break_x("a.txt"), break_x("sub/b.txt"));
+    // Both are broken while the command runs.
+    rpatch_raw(
+        dir.path(),
+        &[
+            "--probe",
+            "sh",
+            "-c",
+            "grep -q 'x = 2' a.txt && grep -q 'x = 2' sub/b.txt",
+        ],
+        &input,
+    )
+    .code(1)
+    .stderr(predicate::str::contains("probe: restored a.txt, sub/b.txt"));
+    assert_eq!(read(&dir, "a.txt"), "x = 1\n");
+    assert_eq!(read(&dir, "sub/b.txt"), "x = 1\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_puts_back_what_the_command_did_to_the_file_too() {
+    let dir = probe_dir();
+    rpatch_raw(
+        dir.path(),
+        &["--probe", "sh", "-c", "echo junk > f.txt; exit 1"],
+        &break_probed(),
+    )
+    .code(0);
+    assert_probed_unchanged(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_does_not_run_the_command_when_an_edit_does_not_match() {
+    let dir = probe_dir();
+    rpatch_raw(
+        dir.path(),
+        &["--probe", "touch", "ran"],
+        &break_x("f.txt").replace("x = 1", "x = 9"),
+    )
+    .code(1)
+    .stderr(predicate::str::contains("nothing written"));
+    assert!(!dir.path().join("ran").exists(), "the command ran");
+    assert_probed_unchanged(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_exits_3_when_the_command_cannot_be_run_and_restores_the_file() {
+    let dir = probe_dir();
+    rpatch_raw(
+        dir.path(),
+        &["--probe", "no-such-command-for-rpatch"],
+        &break_probed(),
+    )
+    .code(3)
+    .stderr(predicate::str::contains(
+        "cannot run `no-such-command-for-rpatch`",
+    ))
+    .stderr(predicate::str::contains("probe: restored f.txt"));
+    assert_probed_unchanged(&dir);
+}
+
+/// 戻せなかったら大きく言う（ファイルがあった所をディレクトリにされた）。
+#[cfg(unix)]
+#[test]
+fn probe_says_loudly_when_a_file_cannot_be_restored() {
+    let dir = probe_dir();
+    rpatch_raw(
+        dir.path(),
+        &["--probe", "sh", "-c", "rm f.txt && mkdir f.txt; exit 1"],
+        &break_probed(),
+    )
+    .code(3)
+    .stderr(predicate::str::contains("RESTORE FAILED"))
+    .stderr(predicate::str::contains("f.txt"));
+}
+
+/// CMD の `--help` は CMD のもの。`--` は区切りで、CMD には渡らない。
+#[cfg(unix)]
+#[test]
+fn probe_gives_everything_after_it_to_the_command() {
+    let dir = probe_dir();
+    let input = break_probed();
+    rpatch_raw(dir.path(), &["--probe", "echo", "--help", "--diff"], &input)
+        .code(1)
+        .stdout(predicate::str::contains("--help --diff\n"))
+        .stdout(predicate::str::contains("rpatch - apply").not());
+    rpatch_raw(dir.path(), &["--probe", "--", "echo", "hi"], &input)
+        .code(1)
+        .stdout(predicate::str::contains("\nhi\n"));
+    // Options before it are rpatch's own.
+    rpatch_raw(dir.path(), &["--diff", "--probe", "false"], &input)
+        .code(0)
+        .stdout(predicate::str::contains("+x = 2"));
+    assert_probed_unchanged(&dir);
+}
+
+#[test]
+fn probe_without_a_command_is_a_usage_error() {
+    let dir = probe_dir();
+    for args in [&["--probe"][..], &["--probe", "--"]] {
+        rpatch_raw(dir.path(), args, &break_x("f.txt"))
+            .code(2)
+            .stderr(predicate::str::contains("--probe needs a command"));
+    }
+    assert_probed_unchanged(&dir);
+}
+
+#[test]
+fn probe_cannot_be_combined_with_a_dry_run() {
+    let dir = probe_dir();
+    for flag in ["--dry-run", "-n"] {
+        rpatch_raw(dir.path(), &[flag, "--probe", "true"], &break_x("f.txt"))
+            .code(2)
+            .stderr(predicate::str::contains(
+                "cannot be combined with --dry-run",
+            ));
+    }
+    assert_probed_unchanged(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_refuses_edits_that_change_no_file_and_does_not_run_the_command() {
+    let dir = setup(&[("a.txt", "x = 1\n")]);
+    let input = format!(
+        "{}=== a.txt\n<<<<<<< OLD\nx = 2\n=======\nx = 1\n>>>>>>> NEW\n",
+        break_x("a.txt")
+    );
+    rpatch_raw(dir.path(), &["--probe", "touch", "ran"], &input)
+        .code(2)
+        .stderr(predicate::str::contains("nothing to probe"));
+    assert!(!dir.path().join("ran").exists(), "the command ran");
+    assert_eq!(read(&dir, "a.txt"), "x = 1\n");
+}
+
+/// SIGTERM が rpatch に来ても、コマンドを止めて、戻してから終わる。
+#[cfg(unix)]
+#[test]
+fn probe_restores_the_file_when_rpatch_is_stopped_by_a_signal() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let dir = probe_dir();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rpatch"))
+        .current_dir(dir.path())
+        .args(["--probe", "sh", "-c", "touch started; exec sleep 30"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = break_probed();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let limit = Instant::now() + Duration::from_secs(20);
+    while !dir.path().join("started").exists() {
+        assert!(Instant::now() < limit, "the command never started");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // The file is broken while the command runs.
+    assert_ne!(fs::read(dir.path().join("f.txt")).unwrap(), PROBED);
+    Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
+    let out = loop {
+        if child.try_wait().unwrap().is_some() {
+            break child.wait_with_output().unwrap();
+        }
+        if Instant::now() > limit {
+            child.kill().unwrap();
+            panic!("rpatch did not stop after SIGTERM");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(out.status.code(), Some(3));
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(err.contains("interrupted by a signal"), "{err}");
+    assert_probed_unchanged(&dir);
+}
